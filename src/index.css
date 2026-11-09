@@ -1,0 +1,109 @@
+@import "tailwindcss";
+@import "@fontsource-variable/fraunces";
+@import "@fontsource-variable/figtree";
+
+/*
+ * Scale system: the approved designs are 1024px wide. 1 spacing unit = 1 design px.
+ * At ≥1024px viewports the root font-size scales with the viewport (capped at 1920px) so the
+ * layout — including the hero photo crop — keeps the exact proportions of the reference; below that, layouts reflow.
+ */
+@theme {
+  --spacing: 0.0625rem;
+
+  --font-serif: "Fraunces Variable", "Times New Roman", serif;
+  --font-sans: "Figtree Variable", system-ui, sans-serif;
+
+  --color-wine-950: #2b0106;
+  --color-wine-900: #3a010a;
+  --color-wine-850: #3e010b;
+  --color-wine-700: #5c0211;
+  --color-wine-600: #6e0a1c;
+  --color-ink: #2a0a0c;
+  --color-ink-title: #3a0a10;
+  --color-ivory: #fdf3ea;
+  --color-ivory-2: #fcf1ea;
+  --color-line: #e9d9cf;
+  --color-star: #e08a08;
+  --color-rose: #e2788a;
+
+  --radius-pill: 999px;
+  --radius-12: 0.75rem;
+  --radius-14: 0.875rem;
+  --radius-16: 1rem;
+}
+
+/* radius in design px (follows the local --spacing scale) */
+@utility r-* {
+  border-radius: calc(var(--spacing) * --value(number));
+}
+@utility rt-* {
+  border-top-left-radius: calc(var(--spacing) * --value(number));
+  border-top-right-radius: calc(var(--spacing) * --value(number));
+}
+
+/* font-size / line-height in design px */
+@utility fs-* {
+  font-size: calc(var(--spacing) * --value(number));
+}
+@utility lh-* {
+  line-height: calc(var(--spacing) * --value(number));
+}
+
+html {
+  font-size: 16px;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+  background: var(--color-ivory);
+}
+/*
+ * Desktop: the 1024px design occupies 75% of the viewport width (approved at 75% browser zoom):
+ * 1024 units = 0.75 × 100vw → root = 0.75 × 100vw / 64 = 1.171875vw.
+ * Never below the 16px full-width fit at 1024px, never above the previous 1920px cap (30px).
+ */
+@media (min-width: 1024px) {
+  html {
+    font-size: clamp(16px, 1.171875vw, 30px);
+  }
+}
+
+/*
+ * Checkout design is 1536px wide: at lg, 1 unit = 1px of that design.
+ * The design occupies 75% of the viewport width (1536 units = 0.75 × 100vw → 1 unit = 100vw / 2048),
+ * never smaller than the full-width fit at 1024px (2/3 px) and never larger than 1.25px.
+ */
+@media (min-width: 1024px) {
+  .checkout-scale {
+    --spacing: clamp(calc(2px / 3), calc(100vw / 2048), 1.25px);
+  }
+}
+
+body {
+  margin: 0;
+  font-family: var(--font-sans);
+  color: var(--color-ink);
+  background: var(--color-ivory);
+}
+
+@layer components {
+  .serif-tight {
+    font-family: var(--font-serif);
+    font-variation-settings: "opsz" 72, "SOFT" 0, "WONK" 0;
+    font-weight: 560;
+    letter-spacing: -0.035em;
+  }
+}
+
+:focus-visible {
+  outline: 2px solid var(--color-rose);
+  outline-offset: 3px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}

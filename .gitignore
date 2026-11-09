@@ -1,0 +1,24 @@
+# dependencies / builds
+node_modules/
+dist/
+*.local
+
+# secrets — never commit
+.env
+.env.*
+!.env.example
+bot/.env
+bot/service-account*.json
+
+# bot local files
+bot/.venv/
+bot/*.db
+bot/orders.csv
+__pycache__/
+.pytest_cache/
+
+# editors / OS
+.vscode/
+.DS_Store
+Thumbs.db
+.vercel

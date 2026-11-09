@@ -1,0 +1,208 @@
+"""Bot state — order counter, processed message IDs, history, 24h window, conversation stage, rate limits.
+
+Production: Postgres (e.g. free Supabase) because free hosts lose their disk on every restart.
+Local dev: SQLite file. Same SQL for both (`?` placeholders are rewritten for Postgres).
+Every write that must be atomic is a single statement (UPSERT … RETURNING), so concurrent
+requests can never get the same order number or process the same WhatsApp message twice.
+"""
+
+from __future__ import annotations
+
+import logging
+import random
+import sqlite3
+import time
+from contextlib import contextmanager
+from dataclasses import dataclass
+from typing import Any, Iterator
+
+log = logging.getLogger("nayo.store")
+
+FIRST_ORDER_NUMBER = 1001
+
+SCHEMA = [
+    "CREATE TABLE IF NOT EXISTS counters (name TEXT PRIMARY KEY, value BIGINT NOT NULL)",
+    "CREATE TABLE IF NOT EXISTS processed_messages (id TEXT PRIMARY KEY, at DOUBLE PRECISION NOT NULL)",
+    "CREATE TABLE IF NOT EXISTS messages (phone TEXT NOT NULL, role TEXT NOT NULL, text TEXT NOT NULL, at DOUBLE PRECISION NOT NULL)",
+    "CREATE INDEX IF NOT EXISTS messages_phone_at ON messages (phone, at)",
+    """CREATE TABLE IF NOT EXISTS conversations (
+        phone TEXT PRIMARY KEY,
+        last_client_at DOUBLE PRECISION,
+        order_number TEXT,
+        stage TEXT NOT NULL DEFAULT '',
+        failed_attempts INTEGER NOT NULL DEFAULT 0,
+        verified_order TEXT,
+        lang TEXT
+    )""",
+    "CREATE TABLE IF NOT EXISTS rate_events (key TEXT NOT NULL, at DOUBLE PRECISION NOT NULL)",
+    "CREATE INDEX IF NOT EXISTS rate_events_key_at ON rate_events (key, at)",
+    """CREATE TABLE IF NOT EXISTS order_requests (
+        client_id TEXT PRIMARY KEY,
+        order_number TEXT NOT NULL,
+        written INTEGER NOT NULL DEFAULT 0
+    )""",
+    "CREATE TABLE IF NOT EXISTS order_aliases (alias TEXT PRIMARY KEY, order_number TEXT NOT NULL)",
+]
+
+CONV_FIELDS = {"last_client_at", "order_number", "stage", "failed_attempts", "verified_order", "lang"}
+
+
+@dataclass
+class Conversation:
+    phone: str
+    last_client_at: float | None = None
+    order_number: str | None = None
+    stage: str = ""  # '' | 'details' | 'await_yes' | 'verify_name'
+    failed_attempts: int = 0
+    verified_order: str | None = None
+    lang: str | None = None
+
+
+class Store:
+    def __init__(self, backend: str, *, database_url: str = "", sqlite_path: str = "bot-state.db"):
+        self.backend = backend
+        self.database_url = database_url
+        self.sqlite_path = sqlite_path
+        if backend == "postgres" and not database_url:
+            raise RuntimeError("STATE_BACKEND=postgres needs DATABASE_URL")
+        if backend == "sqlite":
+            log.warning("STATE_BACKEND=sqlite (%s): fine for local dev, state is lost on free hosts — use postgres in production", sqlite_path)
+        for stmt in SCHEMA:
+            self._exec(stmt)
+        if backend == "postgres":
+            # Supabase exposes the `public` schema through its REST API: RLS with no policies blocks that
+            # entirely, while the bot's own connection (table owner) is unaffected.
+            for table in ("counters", "processed_messages", "messages", "conversations", "rate_events", "order_requests", "order_aliases"):
+                self._exec(f"ALTER TABLE {table} ENABLE ROW LEVEL SECURITY")
+
+    # -- low level ---------------------------------------------------------------------------
+    @contextmanager
+    def _conn(self) -> Iterator[Any]:
+        if self.backend == "postgres":
+            import psycopg  # imported lazily so local dev doesn't need it
+
+            # prepare_threshold=None → works behind Supabase's transaction pooler (port 6543)
+            with psycopg.connect(self.database_url, autocommit=True, prepare_threshold=None) as conn:
+                yield conn
+        else:
+            conn = sqlite3.connect(self.sqlite_path, timeout=10, isolation_level=None)  # autocommit
+            try:
+                yield conn
+            finally:
+                conn.close()
+
+    def _sql(self, sql: str) -> str:
+        return sql.replace("?", "%s") if self.backend == "postgres" else sql
+
+    def _exec(self, sql: str, params: tuple = (), fetch: str | None = None) -> Any:
+        with self._conn() as conn:
+            cur = conn.cursor()
+            cur.execute(self._sql(sql), params)
+            if fetch == "one":
+                return cur.fetchone()
+            if fetch == "all":
+                return cur.fetchall()
+            return None
+
+    def ping(self) -> bool:
+        try:
+            self._exec("SELECT 1", fetch="one")
+            return True
+        except Exception:
+            log.warning("state database unreachable")
+            return False
+
+    # -- order numbers -----------------------------------------------------------------------
+    def next_order_number(self) -> int:
+        """Atomic: one UPSERT…RETURNING statement (row lock in Postgres, write lock in SQLite)."""
+        row = self._exec(
+            "INSERT INTO counters (name, value) VALUES ('order', ?) "
+            "ON CONFLICT (name) DO UPDATE SET value = counters.value + 1 RETURNING value",
+            (FIRST_ORDER_NUMBER,),
+            fetch="one",
+        )
+        return int(row[0])
+
+    def get_request(self, client_id: str) -> tuple[str, bool] | None:
+        row = self._exec("SELECT order_number, written FROM order_requests WHERE client_id = ?", (client_id,), fetch="one")
+        return (row[0], bool(row[1])) if row else None
+
+    def claim_request(self, client_id: str, order_number: str) -> bool:
+        """True if this request is new (we own it), False if another request already claimed this client_id."""
+        row = self._exec(
+            "INSERT INTO order_requests (client_id, order_number) VALUES (?, ?) ON CONFLICT (client_id) DO NOTHING RETURNING client_id",
+            (client_id, order_number),
+            fetch="one",
+        )
+        return row is not None
+
+    def mark_written(self, client_id: str) -> None:
+        self._exec("UPDATE order_requests SET written = 1 WHERE client_id = ?", (client_id,))
+
+    def add_alias(self, alias: str, order_number: str) -> None:
+        self._exec("INSERT INTO order_aliases (alias, order_number) VALUES (?, ?) ON CONFLICT (alias) DO NOTHING", (alias, order_number))
+
+    def resolve_alias(self, number: str) -> str:
+        row = self._exec("SELECT order_number FROM order_aliases WHERE alias = ?", (number,), fetch="one")
+        return row[0] if row else number
+
+    # -- webhook de-duplication ----------------------------------------------------------------
+    def mark_processed(self, message_id: str, now: float | None = None) -> bool:
+        """True the first time a WhatsApp message ID is seen, False for duplicates (Meta retries)."""
+        now = now or time.time()
+        row = self._exec(
+            "INSERT INTO processed_messages (id, at) VALUES (?, ?) ON CONFLICT (id) DO NOTHING RETURNING id",
+            (message_id, now),
+            fetch="one",
+        )
+        if random.random() < 0.02:  # occasional cleanup
+            self._exec("DELETE FROM processed_messages WHERE at < ?", (now - 7 * 86400,))
+            self._exec("DELETE FROM rate_events WHERE at < ?", (now - 86400,))
+        return row is not None
+
+    # -- conversation history ----------------------------------------------------------------
+    def add_message(self, phone: str, role: str, text: str, keep: int = 20, now: float | None = None) -> None:
+        self._exec("INSERT INTO messages (phone, role, text, at) VALUES (?, ?, ?, ?)", (phone, role, text[:2000], now or time.time()))
+        self._exec(
+            "DELETE FROM messages WHERE phone = ? AND at < "
+            "(SELECT MIN(at) FROM (SELECT at FROM messages WHERE phone = ? ORDER BY at DESC LIMIT ?) AS recent)",
+            (phone, phone, keep),
+        )
+
+    def recent_messages(self, phone: str, limit: int = 20) -> list[tuple[str, str]]:
+        rows = self._exec(
+            "SELECT role, text FROM messages WHERE phone = ? ORDER BY at DESC LIMIT ?", (phone, limit), fetch="all"
+        )
+        return [(r[0], r[1]) for r in reversed(rows)]
+
+    # -- conversation state --------------------------------------------------------------------
+    def get_conv(self, phone: str) -> Conversation:
+        row = self._exec(
+            "SELECT phone, last_client_at, order_number, stage, failed_attempts, verified_order, lang FROM conversations WHERE phone = ?",
+            (phone,),
+            fetch="one",
+        )
+        if not row:
+            return Conversation(phone=phone)
+        return Conversation(*row)
+
+    def update_conv(self, phone: str, **fields: Any) -> None:
+        unknown = set(fields) - CONV_FIELDS
+        if unknown:
+            raise ValueError(f"unknown conversation fields: {unknown}")
+        self._exec("INSERT INTO conversations (phone) VALUES (?) ON CONFLICT (phone) DO NOTHING", (phone,))
+        if fields:
+            cols = ", ".join(f"{k} = ?" for k in fields)  # keys are whitelisted above
+            self._exec(f"UPDATE conversations SET {cols} WHERE phone = ?", (*fields.values(), phone))
+
+    def touch_client(self, phone: str, now: float | None = None) -> None:
+        self.update_conv(phone, last_client_at=now or time.time())
+
+    # -- rate limiting -------------------------------------------------------------------------
+    def hit(self, key: str, now: float | None = None) -> None:
+        self._exec("INSERT INTO rate_events (key, at) VALUES (?, ?)", (key, now or time.time()))
+
+    def count(self, key: str, window_s: float, now: float | None = None) -> int:
+        now = now or time.time()
+        row = self._exec("SELECT COUNT(*) FROM rate_events WHERE key = ? AND at > ?", (key, now - window_s), fetch="one")
+        return int(row[0])

@@ -1,0 +1,10 @@
+.venv
+.env
+*.db
+orders.csv
+service-account*.json
+tests
+__pycache__
+.pytest_cache
+chat_sim.py
+test_conversations.py
