@@ -151,7 +151,8 @@ The repository holds two Vercel projects. Import it twice from vercel.com → **
 For **nayo-bot**, add every variable from `.env.example` under **Settings → Environment Variables**, and also:
 - `PROCESS_INLINE=true`. Required on Vercel: each message is handled before Meta gets its answer.
 - `STATE_BACKEND=postgres` and `DATABASE_URL`: the Supabase pooler URL.
-- `ORDERS_BACKEND=sheets`, with `GOOGLE_SERVICE_ACCOUNT_JSON` holding the **whole JSON on one line**, since there is no file on Vercel.
+- `ORDERS_BACKEND=db` keeps orders in Supabase (Table Editor → orders), with no Google setup needed.
+  Later, `ORDERS_BACKEND=sheets` with `GOOGLE_SERVICE_ACCOUNT_JSON` = the **whole JSON on one line** (there is no file on Vercel).
 - `ALLOWED_ORIGINS` = the website's address, e.g. `https://nayo.vercel.app`.
 
 For **nayo** (the website):
