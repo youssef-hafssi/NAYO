@@ -146,7 +146,7 @@ The repository holds two Vercel projects. Import it twice from vercel.com → **
 | Project | Root Directory | Framework |
 |---|---|---|
 | `nayo` (website) | `./` (repository root) | Vite (detected automatically) |
-| `nayo-bot` (this bot) | `bot` | Other: `bot/vercel.json` sends every route to `bot/api/index.py` |
+| `nayo-bot` (this bot) | `bot` | FastAPI: Vercel serves the `app` defined in `bot/index.py` |
 
 For **nayo-bot**, add every variable from `.env.example` under **Settings → Environment Variables**, and also:
 - `PROCESS_INLINE=true`. Required on Vercel: each message is handled before Meta gets its answer.
@@ -227,6 +227,7 @@ app/orders.py    website order validation + numbering (idempotent per clientId)
 app/store.py     Postgres/SQLite memory
 app/sheets.py    Google Sheet
 app/whatsapp.py  Cloud API send + signature check
+index.py         Vercel entry point (FastAPI preset)
 tests/           pytest (AI, Sheet and WhatsApp are mocked)
 test_conversations.py   real-AI smoke test
 ```
