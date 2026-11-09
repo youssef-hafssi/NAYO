@@ -175,3 +175,55 @@ class CsvOrders:
                 log.warning("update: order %s not found", order_number)
                 return
             self._write(rows)
+
+
+class DbOrders:
+    """Orders in the bot's own database (ORDERS_BACKEND=db): Supabase Postgres in production.
+
+    Same columns as the Google Sheet. View/edit them in Supabase → Table Editor → orders.
+    """
+
+    def __init__(self, store: Any):
+        self.store = store
+        cols = ", ".join(f"{h} TEXT NOT NULL DEFAULT ''" for h in HEADERS if h != "order_number")
+        store._exec(f"CREATE TABLE IF NOT EXISTS orders (order_number TEXT PRIMARY KEY, {cols})")
+        store._exec("CREATE INDEX IF NOT EXISTS orders_phone ON orders (phone)")
+        if store.backend == "postgres":
+            store._exec("ALTER TABLE orders ENABLE ROW LEVEL SECURITY")
+
+    def _row(self, values: Any) -> dict[str, Any]:
+        return dict(zip(HEADERS, values))
+
+    def append(self, order: dict[str, Any]) -> None:
+        cols = ", ".join(HEADERS)
+        marks = ", ".join("?" for _ in HEADERS)
+        self.store._exec(
+            f"INSERT INTO orders ({cols}) VALUES ({marks}) ON CONFLICT (order_number) DO NOTHING",
+            tuple(str(order.get(h, "")) for h in HEADERS),
+        )
+
+    def get(self, order_number: str) -> dict[str, Any] | None:
+        row = self.store._exec(
+            f"SELECT {', '.join(HEADERS)} FROM orders WHERE UPPER(order_number) = UPPER(?)", (order_number,), fetch="one"
+        )
+        return self._row(row) if row else None
+
+    def find_open_by_phone(self, phone: str, statuses: tuple[str, ...] = OPEN_STATUSES) -> dict[str, Any] | None:
+        marks = ", ".join("?" for _ in statuses)
+        row = self.store._exec(
+            f"SELECT {', '.join(HEADERS)} FROM orders WHERE phone = ? AND status IN ({marks}) "
+            "ORDER BY created_at DESC, order_number DESC LIMIT 1",
+            (phone, *statuses),
+            fetch="one",
+        )
+        return self._row(row) if row else None
+
+    def update(self, order_number: str, **fields: Any) -> None:
+        unknown = set(fields) - set(HEADERS)
+        if unknown:
+            raise ValueError(f"unknown columns: {unknown}")
+        fields["updated_at"] = now_local()
+        sets = ", ".join(f"{k} = ?" for k in fields)  # keys whitelisted above
+        self.store._exec(
+            f"UPDATE orders SET {sets} WHERE UPPER(order_number) = UPPER(?)", (*[str(v) for v in fields.values()], order_number)
+        )

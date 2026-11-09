@@ -40,12 +40,14 @@ class Services:
 
 def build_services(settings: Settings) -> Services:
     from .ai import GeminiAI
-    from .sheets import CsvOrders, SheetOrders
+    from .sheets import CsvOrders, DbOrders, SheetOrders
     from .whatsapp import WhatsAppClient
 
     store = Store(settings.state_backend, database_url=settings.database_url, sqlite_path=settings.sqlite_path)
     if settings.orders_backend == "csv":
         orders = CsvOrders(settings.csv_path)
+    elif settings.orders_backend == "db":
+        orders = DbOrders(store)
     else:
         orders = SheetOrders(settings.google_sheet_id, settings.google_service_account_json, settings.orders_tab)
     wa = WhatsAppClient(settings.whatsapp_token, settings.whatsapp_phone_number_id, settings.graph_api_version)

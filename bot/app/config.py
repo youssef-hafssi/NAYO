@@ -27,7 +27,8 @@ class Settings(BaseSettings):
     google_sheet_id: str = ""
     google_service_account_json: str = "service-account.json"  # path, or the raw JSON itself
     orders_tab: str = "orders"
-    orders_backend: Literal["sheets", "csv"] = "sheets"  # csv = local test without Google
+    # sheets = Google Sheet · db = the bot database (Supabase) · csv = local test file
+    orders_backend: Literal["sheets", "db", "csv"] = "sheets"
     csv_path: str = "orders.csv"
 
     # People / secrets

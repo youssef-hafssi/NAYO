@@ -160,3 +160,21 @@ def test_inline_mode_replies_before_answering_meta(settings, orders, store, bot,
     with TestClient(create_app(Services(settings, store, orders, bot))) as c:
         r = c.post("/webhook", content=body, headers={"X-Hub-Signature-256": sig})
     assert r.status_code == 200 and wa.to("212612345678")
+
+
+def test_db_orders_backend(store):
+    from app.sheets import DbOrders
+
+    o = DbOrders(store)
+    o.append({"order_number": "NAYO-1001", "created_at": "2026-11-09 10:00:00", "name": "Imane Él", "phone": "212612345678",
+              "quantity": 1, "total": 209, "status": "new"})
+    o.append({"order_number": "NAYO-1002", "created_at": "2026-11-09 11:00:00", "name": "Salma", "phone": "212612345678",
+              "quantity": 2, "total": 398, "status": "new"})
+    assert o.find_open_by_phone("212612345678")["order_number"] == "NAYO-1002"
+    o.update("nayo-1002", status="confirmed", city="Agadir")
+    assert o.get("NAYO-1002")["status"] == "confirmed" and o.get("NAYO-1002")["updated_at"]
+    assert o.find_open_by_phone("212612345678")["order_number"] == "NAYO-1001"
+    assert o.find_open_by_phone("212612345678", ("confirmed",))["city"] == "Agadir"
+    assert o.get("NAYO-1001")["name"] == "Imane Él" and o.get("NAYO-9999") is None
+    with pytest.raises(ValueError):
+        o.update("NAYO-1001", hacked="1")
