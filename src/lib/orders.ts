@@ -64,8 +64,10 @@ async function post(order: OrderPayload, timeoutMs: number): Promise<{ ok: true;
       const data = (await res.json()) as { orderNumber: string; total: number }
       return { ok: true, orderNumber: data.orderNumber, total: data.total }
     }
-    // 422 (invalid) / 401 (bad key) won't fix themselves by retrying.
-    return { ok: false, permanent: res.status === 422 || res.status === 401 || res.status === 413 }
+    // Only an invalid order (422/413) is permanent. A bad API key (401), a CORS/config problem or a
+    // sleeping server can be fixed later, so the order stays saved and is retried.
+    if (res.status === 401) console.error('[NAYO] the bot rejected VITE_ORDER_API_KEY — check it matches ORDER_API_KEY')
+    return { ok: false, permanent: res.status === 422 || res.status === 413 }
   } catch {
     return { ok: false, permanent: false }
   } finally {
