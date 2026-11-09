@@ -106,6 +106,15 @@ class Bot:
                     self._send(phone, t("ask_name", lang))
                     return
                 order = found
+            else:
+                # The client quoted a number we don't have. Never continue with a *different* order.
+                if number.startswith("NAYO-W"):
+                    # Website fallback number: the order is still on its way from the browser (retried until saved).
+                    self._send(phone, t("order_pending", lang, number=number))
+                    self._throttled_alert(phone, number, text, "numéro de secours pas encore reçu par le bot")
+                else:
+                    self._send(phone, t("order_unknown", lang, number=number))
+                return
 
         if order is None and conv.stage == "verify_name" and conv.order_number:
             self._verify_name(phone, text, conv, lang)

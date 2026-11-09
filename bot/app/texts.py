@@ -14,6 +14,18 @@ T: dict[str, dict[str, str]] = {
         "darija": "Salam 😊 3afak sift lina numéro dyal la commande (bhal NAYO-1043), kayn f la page dyal la confirmation.",
         "ar": "السلام 😊 عافاك صيفط لينا رقم الطلب (بحال NAYO-1043)، كاين فصفحة التأكيد.",
     },
+    "order_pending": {
+        "fr": "Merci ! Votre commande {number} est en cours d'enregistrement, nous revenons vers vous très vite 🙏",
+        "darija": "Choukran! La commande {number} ghadi tsajjel daba, ghadi nrj3o lik dghya 🙏",
+        "ar": "شكرا! الطلب {number} كيتسجل دابا، غادي نرجعو ليك دغيا 🙏",
+        "en": "Thank you! Your order {number} is being registered, we'll get back to you very soon 🙏",
+    },
+    "order_unknown": {
+        "fr": "Nous ne trouvons pas la commande {number}. Pouvez-vous vérifier le numéro affiché sur la page de confirmation ?",
+        "darija": "Ma l9inach la commande {number}. 3afak t2akked mn numéro li kayn f la page dyal la confirmation.",
+        "ar": "ما لقيناش الطلب {number}. عافاك تأكد من الرقم اللي كاين فصفحة التأكيد.",
+        "en": "We can't find order {number}. Could you check the number shown on the confirmation page?",
+    },
     "ask_name": {
         "fr": "Merci ! Pour la sécurité de la commande, pouvez-vous écrire le nom complet utilisé lors de la commande ?",
         "darija": "Choukran! Bach nt2akdo, 3afak kteb lina smiya kamla li dkhlti f la commande.",

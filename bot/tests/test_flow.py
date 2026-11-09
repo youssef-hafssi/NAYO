@@ -321,3 +321,26 @@ def test_plain_yes_on_cancelled_order_shows_recap_first(say, orders, wa, ai):
     say("wakha bghitha")
     assert status(orders) == "awaiting_details"  # not confirmed straight away
     assert "209" in wa.to(CLIENT)[-1]  # recap with the total
+
+
+def test_unknown_fallback_number_never_uses_another_order(say, orders, wa, ai):
+    say("salam", sender=OWNER)
+    orders.add("NAYO-1003", "dfrg", CLIENT, status="confirmed", city="casablanca", address="rue 124")
+    say("Bonjour NAYO, je confirme ma commande NAYO-W760929 – 209 MAD – yyi")
+    assert "NAYO-W760929" in wa.to(CLIENT)[-1] and "enregistrement" in wa.to(CLIENT)[-1]
+    assert ai.calls == [] and status(orders, "NAYO-1003") == "confirmed"
+    assert "NAYO-W760929" in wa.to(OWNER)[-1]
+
+
+def test_unknown_regular_number_asks_to_check(say, orders, wa, ai):
+    orders.add("NAYO-1003", "dfrg", CLIENT, status="confirmed")
+    say("je confirme NAYO-1999")
+    assert "NAYO-1999" in wa.to(CLIENT)[-1] and ai.calls == []
+
+
+def test_fallback_number_works_once_the_order_arrives(say, orders, wa, ai, store):
+    say("je confirme NAYO-W760929")  # not there yet
+    orders.add("NAYO-W760929", "yyi", CLIENT)  # browser retry delivered it
+    ai.push("confirm", "x")
+    say("je confirme ma commande NAYO-W760929")
+    assert status(orders, "NAYO-W760929") == "awaiting_details"
