@@ -227,3 +227,46 @@ class DbOrders:
         self.store._exec(
             f"UPDATE orders SET {sets} WHERE UPPER(order_number) = UPPER(?)", (*[str(v) for v in fields.values()], order_number)
         )
+
+
+class MirroredOrders:
+    """Wraps the real order store and copies every new/changed order to a Google Sheet through an
+    Apps Script web app (SHEET_WEBHOOK_URL). The sheet is a mirror for the owner: if it is down,
+    the bot keeps working and only logs a warning.
+    """
+
+    def __init__(self, inner: Any, url: str, secret: str, post: Any = None):
+        self.inner, self.url, self.secret = inner, url, secret
+        if post is None:
+            import httpx
+
+            client = httpx.Client(timeout=10, follow_redirects=True)  # Apps Script answers with a 302
+            post = client.post
+        self._post = post
+
+    def _mirror(self, order_number: str) -> None:
+        row = self.inner.get(order_number)
+        if not row:
+            return
+        order = {h: row.get(h, "") for h in HEADERS}
+        try:
+            r = self._post(self.url, json={"secret": self.secret, "order": order})
+            ok = getattr(r, "status_code", 200) < 400 and '"ok":true' in getattr(r, "text", '"ok":true').replace(" ", "")
+            if not ok:
+                log.warning("sheet mirror refused %s: HTTP %s %s", order_number, getattr(r, "status_code", "?"), getattr(r, "text", "")[:120])
+        except Exception as e:  # never break the order flow because of the sheet
+            log.warning("sheet mirror failed for %s: %s", order_number, type(e).__name__)
+
+    def append(self, order: dict[str, Any]) -> None:
+        self.inner.append(order)
+        self._mirror(str(order.get("order_number", "")))
+
+    def get(self, order_number: str) -> dict[str, Any] | None:
+        return self.inner.get(order_number)
+
+    def find_open_by_phone(self, phone: str, statuses: tuple[str, ...] = OPEN_STATUSES) -> dict[str, Any] | None:
+        return self.inner.find_open_by_phone(phone, statuses)
+
+    def update(self, order_number: str, **fields: Any) -> None:
+        self.inner.update(order_number, **fields)
+        self._mirror(order_number)

@@ -178,3 +178,35 @@ def test_db_orders_backend(store):
     assert o.get("NAYO-1001")["name"] == "Imane Él" and o.get("NAYO-9999") is None
     with pytest.raises(ValueError):
         o.update("NAYO-1001", hacked="1")
+
+
+def test_sheet_mirror_copies_new_and_changed_orders(store):
+    from app.sheets import DbOrders, MirroredOrders
+
+    posted = []
+
+    class Resp:
+        status_code, text = 200, '{"ok":true}'
+
+    def fake_post(url, json):
+        posted.append((url, json))
+        return Resp()
+
+    o = MirroredOrders(DbOrders(store), "https://script.example/exec", "s3cret", post=fake_post)
+    o.append({"order_number": "NAYO-1001", "name": "Salma", "phone": "212612345678", "quantity": 1, "total": 209, "status": "new"})
+    o.update("NAYO-1001", status="confirmed", city="Agadir")
+    assert [p[1]["order"]["status"] for p in posted] == ["new", "confirmed"]
+    assert posted[-1][1]["secret"] == "s3cret" and posted[-1][1]["order"]["city"] == "Agadir"
+    assert set(posted[-1][1]["order"]) >= {"order_number", "phone", "total", "address", "updated_at"}
+
+
+def test_sheet_mirror_failure_never_breaks_orders(store):
+    from app.sheets import DbOrders, MirroredOrders
+
+    def boom(url, json):
+        raise RuntimeError("google down")
+
+    o = MirroredOrders(DbOrders(store), "https://script.example/exec", "s", post=boom)
+    o.append({"order_number": "NAYO-1001", "name": "Salma", "phone": "212612345678", "status": "new"})
+    o.update("NAYO-1001", status="confirmed")
+    assert o.get("NAYO-1001")["status"] == "confirmed"

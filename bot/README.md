@@ -72,6 +72,22 @@ Write each secret into `bot/.env` as you go: copy `.env.example` to `.env` first
 5. Open the service account, then **Keys → Add key → Create new key → JSON**. A file downloads. Put it in `bot/` as `service-account.json`. That's the default `GOOGLE_SERVICE_ACCOUNT_JSON`.
 6. Open the downloaded JSON and copy the `client_email` (…@….iam.gserviceaccount.com). In your Google Sheet, click **Share**, paste that email, and give it **Editor** access. Without this step the bot can't see the sheet.
 
+### Simpler alternative: Google Sheet mirror (no service account)
+
+The bot keeps its orders in Supabase (`ORDERS_BACKEND=db`) and **copies** every new or changed order to your
+sheet through a small Apps Script. Each order is one row, updated in place.
+
+1. Open the sheet → **Extensions → Apps Script**. Delete what's there and paste `bot/google-apps-script.gs`.
+2. Replace `PASTE-THE-SHEET_WEBHOOK_SECRET-HERE` with a long random string. Put **the same string** in
+   `SHEET_WEBHOOK_SECRET`, both on Vercel and in `bot/.env`.
+3. Make sure the tab is called `Feuille 1`, or change `SHEET_NAME` in the script. If the tab has old content,
+   empty it: the script writes the headers itself on the first order.
+4. **Deploy → New deployment → Web app**: *Execute as* **Me**, *Who has access* **Anyone** → **Deploy**,
+   then authorise. Copy the **Web app URL** (`https://script.google.com/macros/s/…/exec`) into `SHEET_WEBHOOK_URL`.
+5. Redeploy the bot. If the sheet is ever unreachable, orders still work: the bot only logs a warning.
+
+If you edit the script later, use **Deploy → Manage deployments → Edit → New version** to keep the same URL.
+
 Status values in the sheet: `new` → `awaiting_details` → `confirmed` | `cancelled` | `needs_human`.
 When a row is `needs_human`, the bot stays silent for that client and you take over in WhatsApp. To give a conversation back to the bot, change the status back to `awaiting_details`.
 

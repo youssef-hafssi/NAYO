@@ -30,6 +30,9 @@ class Settings(BaseSettings):
     # sheets = Google Sheet · db = the bot database (Supabase) · csv = local test file
     orders_backend: Literal["sheets", "db", "csv"] = "sheets"
     csv_path: str = "orders.csv"
+    # Optional copy of every order to a Google Sheet via an Apps Script web app (see README "Google Sheet mirror")
+    sheet_webhook_url: str = ""
+    sheet_webhook_secret: str = ""
 
     # People / secrets
     owner_whatsapp: str = ""

@@ -40,7 +40,7 @@ class Services:
 
 def build_services(settings: Settings) -> Services:
     from .ai import GeminiAI
-    from .sheets import CsvOrders, DbOrders, SheetOrders
+    from .sheets import CsvOrders, DbOrders, MirroredOrders, SheetOrders
     from .whatsapp import WhatsAppClient
 
     store = Store(settings.state_backend, database_url=settings.database_url, sqlite_path=settings.sqlite_path)
@@ -50,6 +50,8 @@ def build_services(settings: Settings) -> Services:
         orders = DbOrders(store)
     else:
         orders = SheetOrders(settings.google_sheet_id, settings.google_service_account_json, settings.orders_tab)
+    if settings.sheet_webhook_url:
+        orders = MirroredOrders(orders, settings.sheet_webhook_url, settings.sheet_webhook_secret)
     wa = WhatsAppClient(settings.whatsapp_token, settings.whatsapp_phone_number_id, settings.graph_api_version)
     ai = GeminiAI(
         settings.gemini_api_key,
