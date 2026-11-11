@@ -344,3 +344,27 @@ def test_fallback_number_works_once_the_order_arrives(say, orders, wa, ai, store
     ai.push("confirm", "x")
     say("je confirme ma commande NAYO-W760929")
     assert status(orders, "NAYO-W760929") == "awaiting_details"
+
+
+def test_repeat_customer_new_order_is_not_merged_into_the_old_confirmed_one(say, orders, wa, ai, store):
+    # Order A: earlier conversation, confirmed — the conversation memory still points at it.
+    orders.add("NAYO-1001", "Salma", CLIENT, quantity=1, status="confirmed", city="Agadir", address="hay salam")
+    store.update_conv(CLIENT, order_number="NAYO-1001", stage="")
+    # Order B: placed today on the website, same phone.
+    orders.add("NAYO-1002", "Salma", CLIENT, quantity=1, status="new")
+    ai.push("change_quantity", "x", quantity=2)
+    say("bghit wahda khra")  # no order number in the text
+    a, b = orders.get("NAYO-1001"), orders.get("NAYO-1002")
+    assert ai.calls[-1][0]["order_number"] == "NAYO-1002"  # the AI was given order B
+    assert (a["status"], a["quantity"], a["total"]) == ("confirmed", "1", "209")  # A untouched
+    assert (b["quantity"], b["total"]) == ("2", "398")  # B updated
+    assert "398" in wa.to(CLIENT)[-1]
+    assert store.get_conv(CLIENT).order_number == "NAYO-1002"  # memory moved to B
+
+
+def test_bound_confirmed_order_still_used_when_no_fresh_order(say, orders, ai, store):
+    orders.add("NAYO-1001", "Salma", CLIENT, status="confirmed", city="Agadir", address="hay salam")
+    store.update_conv(CLIENT, order_number="NAYO-1001", stage="")
+    ai.push("question", "189 MAD")
+    say("chhal taman?")
+    assert ai.calls[-1][0]["order_number"] == "NAYO-1001"

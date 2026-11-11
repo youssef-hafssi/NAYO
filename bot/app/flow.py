@@ -120,13 +120,17 @@ class Bot:
             self._verify_name(phone, text, conv, lang)
             return
 
+        if order is None:
+            # A fresh order (new / awaiting_details) on this phone comes first: a repeat customer's new
+            # website order must not be merged into the old order this phone talked about last time.
+            order = self.orders.find_open_by_phone(phone)
+
         if order is None and conv.order_number:
+            # No fresh order waiting: continue with the order this conversation was about
+            # (confirmed / cancelled / needs_human, or one verified by name from another phone).
             bound = self.orders.get(conv.order_number)
             if bound and (bound["phone"] == phone or conv.verified_order == bound["order_number"]):
                 order = bound
-
-        if order is None:
-            order = self.orders.find_open_by_phone(phone)
 
         if order is None:
             # An order waiting for a human is still this client's order: the bot keeps handling the order itself.
