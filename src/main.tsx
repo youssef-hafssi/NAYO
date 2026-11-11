@@ -9,6 +9,7 @@ import { keepFlushing } from './lib/orders'
 keepFlushing()
 
 const Checkout = lazy(() => import('./pages/Checkout'))
+const Admin = lazy(() => import('./pages/Admin'))
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
@@ -20,6 +21,14 @@ createRoot(document.getElementById('root')!).render(
           element={
             <Suspense fallback={null}>
               <Checkout />
+            </Suspense>
+          }
+        />
+        <Route
+          path="/admin"
+          element={
+            <Suspense fallback={null}>
+              <Admin />
             </Suspense>
           }
         />

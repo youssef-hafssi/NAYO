@@ -214,6 +214,33 @@ Run it from the `bot` folder; it uses the `Procfile`. Put secrets in Secret Mana
 
 ---
 
+## Admin inbox (/admin)
+
+The team reads every WhatsApp conversation at **`https://<website>/admin`**: the conversation list (filters
+Tous / Besoin d'aide / Confirmées / Annulées), the thread, the order panel and internal notes.
+- **Take over a conversation:** click "Bot actif · Reprendre la conversation", or simply send a message.
+  The bot then stays **completely silent** for that client: incoming messages are only stored. Click
+  "Repris par … · Rendre au bot" to hand it back.
+- **Replies:** you can only reply within WhatsApp's 24h window, i.e. 24h after the client's last message.
+  The yellow banner shows the time left.
+- **Order statuses:** set with the pills in the order panel. They go through the same order store (and the
+  Google Sheet mirror, if configured).
+- **Refresh:** the page polls every 4 seconds.
+
+**Setup:**
+1. Set `ADMIN_SECRET` (a long random string) on the **nayo-bot** Vercel project, then redeploy.
+2. The website forwards `/bot-api/*` to `https://nayo-bot.vercel.app` (see `vercel.json`). The login cookie is
+   then on the website's own address, which every browser accepts. If the bot's address changes, update `vercel.json`.
+3. Create the team members from your computer. There's no sign-up page; `bot/.env` must point to the production database:
+   ```powershell
+   .venv\Scripts\python create_admin.py --email sara@nayo.ma --name "Sara"
+   ```
+   The password is asked without being shown. Run it again to reset a password. `--sql` prints an INSERT
+   statement to paste in Supabase → SQL editor instead.
+
+Local development: `npm run dev` forwards `/bot-api` to the bot on `http://127.0.0.1:8000`
+(override it with `BOT_PROXY_TARGET`).
+
 ## How the bot decides
 
 The AI (Gemini) only does two things:

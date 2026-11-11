@@ -106,7 +106,8 @@ def test_processed_ids_and_history(store):
     assert store.mark_processed("a") is False
     for i in range(30):
         store.add_message("p", "client", f"m{i}", keep=20, now=1000 + i)
-    msgs = store.recent_messages("p", 50)
+    assert len(store.thread("p")) == 30  # full history is kept for the admin inbox
+    msgs = store.recent_messages("p", 20)  # the AI only ever sees the last 20
     assert len(msgs) == 20 and msgs[0][1] == "m10" and msgs[-1][1] == "m29"
 
 

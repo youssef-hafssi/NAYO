@@ -76,6 +76,11 @@ class Bot:
             return
 
         conv = self.store.get_conv(phone)
+        if conv.taken_over_by:
+            # A team member is handling this thread from the admin inbox: store only (done above),
+            # no AI, no auto-reply, no order change — until they release it back to the bot.
+            log.info("%s is taken over by %s — message stored, bot silent", _mask(phone), conv.taken_over_by)
+            return
         lang = detect_lang(text, conv.lang) if text else (conv.lang or "fr")
         if lang != conv.lang:
             self.store.update_conv(phone, lang=lang)
@@ -390,10 +395,25 @@ class Bot:
         if not self.wa.send_text(self.owner, body):
             log.warning("owner alert NOT delivered (send a message to the bot number from OWNER_WHATSAPP to open the 24h window)")
 
-    def _send(self, phone: str, body: str) -> bool:
+    def window_open(self, phone: str) -> bool:
+        """WhatsApp only allows free-form messages within 24h of the client's last message."""
         conv = self.store.get_conv(phone)
+        return bool(conv.last_client_at) and self.clock() - conv.last_client_at <= WINDOW_S
+
+    def send_as_agent(self, phone: str, body: str, agent: str) -> str:
+        """A team member replies from the admin inbox. Returns "sent", "window_closed" or "failed".
+        Sending also takes the conversation over (the bot stays silent until it is released)."""
+        if not self.window_open(phone):
+            return "window_closed"
+        if not self.wa.send_text(phone, body):
+            return "failed"
+        self.store.add_message(phone, "agent", body, now=self.clock(), agent_name=agent)
+        self.store.update_conv(phone, taken_over_by=agent)
+        return "sent"
+
+    def _send(self, phone: str, body: str) -> bool:
         now = self.clock()
-        if not conv.last_client_at or now - conv.last_client_at > WINDOW_S:
+        if not self.window_open(phone):
             log.warning("outside the 24h window for %s — not sending (templates are never used)", _mask(phone))
             return False
         self.store.hit(f"reply:{phone}", now)

@@ -160,6 +160,9 @@ def create_app(services: Services | None = None, settings: Settings | None = Non
                 background.add_task(s.bot.handle, msg)  # reply happens after the 200 below
         return {"ok": True}
 
+    from .admin import build_admin_router
+
+    app.include_router(build_admin_router(svc, settings))  # /admin/* (team inbox)
     return app
 
 

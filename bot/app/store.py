@@ -42,9 +42,30 @@ SCHEMA = [
         written INTEGER NOT NULL DEFAULT 0
     )""",
     "CREATE TABLE IF NOT EXISTS order_aliases (alias TEXT PRIMARY KEY, order_number TEXT NOT NULL)",
+    """CREATE TABLE IF NOT EXISTS admin_users (
+        id TEXT PRIMARY KEY,
+        email TEXT NOT NULL UNIQUE,
+        password_hash TEXT NOT NULL,
+        name TEXT NOT NULL
+    )""",
 ]
 
-CONV_FIELDS = {"last_client_at", "order_number", "stage", "failed_attempts", "verified_order", "lang"}
+# Columns added after the first release (tables created before them get them on start-up).
+MIGRATIONS = [
+    ("messages", "agent_name", "TEXT"),  # set only when role = agent
+    ("conversations", "taken_over_by", "TEXT"),  # agent name while a human handles the thread; NULL = bot
+    ("conversations", "admin_read_at", "DOUBLE PRECISION"),  # unread counter in the admin inbox
+    ("conversations", "internal_notes", "TEXT"),  # team-only notes shown in the admin inbox
+    ("admin_users", "last_seen_at", "DOUBLE PRECISION"),  # members online in the admin inbox
+]
+
+RLS_TABLES = ("counters", "processed_messages", "messages", "conversations", "rate_events", "order_requests",
+              "order_aliases", "admin_users")
+
+CONV_FIELDS = {"last_client_at", "order_number", "stage", "failed_attempts", "verified_order", "lang",
+               "taken_over_by", "admin_read_at", "internal_notes"}
+CONV_COLUMNS = ("phone, last_client_at, order_number, stage, failed_attempts, verified_order, lang, taken_over_by, "
+                "admin_read_at, internal_notes")
 
 
 @dataclass
@@ -56,6 +77,9 @@ class Conversation:
     failed_attempts: int = 0
     verified_order: str | None = None
     lang: str | None = None
+    taken_over_by: str | None = None  # agent name while a human handles this thread (bot silent)
+    admin_read_at: float | None = None
+    internal_notes: str | None = None
 
 
 class Store:
@@ -69,11 +93,21 @@ class Store:
             log.warning("STATE_BACKEND=sqlite (%s): fine for local dev, state is lost on free hosts — use postgres in production", sqlite_path)
         for stmt in SCHEMA:
             self._exec(stmt)
+        for table, column, decl in MIGRATIONS:
+            self._ensure_column(table, column, decl)
         if backend == "postgres":
             # Supabase exposes the `public` schema through its REST API: RLS with no policies blocks that
             # entirely, while the bot's own connection (table owner) is unaffected.
-            for table in ("counters", "processed_messages", "messages", "conversations", "rate_events", "order_requests", "order_aliases"):
+            for table in RLS_TABLES:
                 self._exec(f"ALTER TABLE {table} ENABLE ROW LEVEL SECURITY")
+
+    def _ensure_column(self, table: str, column: str, decl: str) -> None:
+        if self.backend == "postgres":
+            self._exec(f"ALTER TABLE {table} ADD COLUMN IF NOT EXISTS {column} {decl}")
+        else:
+            existing = {r[1] for r in self._exec(f"PRAGMA table_info({table})", fetch="all")}
+            if column not in existing:
+                self._exec(f"ALTER TABLE {table} ADD COLUMN {column} {decl}")
 
     # -- low level ---------------------------------------------------------------------------
     @contextmanager
@@ -161,12 +195,14 @@ class Store:
         return row is not None
 
     # -- conversation history ----------------------------------------------------------------
-    def add_message(self, phone: str, role: str, text: str, keep: int = 20, now: float | None = None) -> None:
-        self._exec("INSERT INTO messages (phone, role, text, at) VALUES (?, ?, ?, ?)", (phone, role, text[:2000], now or time.time()))
+    def add_message(
+        self, phone: str, role: str, text: str, keep: int = 0, now: float | None = None, agent_name: str | None = None
+    ) -> None:
+        """Store one message. The full history is kept (the admin inbox shows it); `recent_messages(limit)`
+        is what caps the context given to the AI. `keep` is ignored (kept for backwards compatibility)."""
         self._exec(
-            "DELETE FROM messages WHERE phone = ? AND at < "
-            "(SELECT MIN(at) FROM (SELECT at FROM messages WHERE phone = ? ORDER BY at DESC LIMIT ?) AS recent)",
-            (phone, phone, keep),
+            "INSERT INTO messages (phone, role, text, at, agent_name) VALUES (?, ?, ?, ?, ?)",
+            (phone, role, text[:2000], now or time.time(), agent_name if role == "agent" else None),
         )
 
     def recent_messages(self, phone: str, limit: int = 20) -> list[tuple[str, str]]:
@@ -178,7 +214,7 @@ class Store:
     # -- conversation state --------------------------------------------------------------------
     def get_conv(self, phone: str) -> Conversation:
         row = self._exec(
-            "SELECT phone, last_client_at, order_number, stage, failed_attempts, verified_order, lang FROM conversations WHERE phone = ?",
+            f"SELECT {CONV_COLUMNS} FROM conversations WHERE phone = ?",
             (phone,),
             fetch="one",
         )
@@ -206,3 +242,57 @@ class Store:
         now = now or time.time()
         row = self._exec("SELECT COUNT(*) FROM rate_events WHERE key = ? AND at > ?", (key, now - window_s), fetch="one")
         return int(row[0])
+
+    # -- admin inbox ---------------------------------------------------------------------------
+    def thread(self, phone: str) -> list[dict[str, Any]]:
+        rows = self._exec(
+            "SELECT role, text, at, agent_name FROM messages WHERE phone = ? ORDER BY at ASC", (phone,), fetch="all"
+        )
+        return [{"role": r[0], "text": r[1], "at": r[2], "agent_name": r[3]} for r in rows]
+
+    def conversation_rows(self, limit: int = 300) -> list[dict[str, Any]]:
+        """One row per phone with its last message and unread count (client messages not yet seen by the team)."""
+        rows = self._exec(
+            f"""SELECT {", ".join("c." + c.strip() for c in CONV_COLUMNS.split(","))},
+                   (SELECT m.text FROM messages m WHERE m.phone = c.phone ORDER BY m.at DESC LIMIT 1),
+                   (SELECT m.role FROM messages m WHERE m.phone = c.phone ORDER BY m.at DESC LIMIT 1),
+                   (SELECT MAX(m.at) FROM messages m WHERE m.phone = c.phone),
+                   (SELECT COUNT(*) FROM messages m WHERE m.phone = c.phone AND m.role = 'client'
+                        AND m.at > COALESCE(c.admin_read_at, 0))
+                FROM conversations c""",
+            fetch="all",
+        )
+        out = []
+        for r in rows:
+            conv = Conversation(*r[:10])
+            if r[12] is None:  # no message at all
+                continue
+            out.append({"conv": conv, "last_text": r[10], "last_role": r[11], "last_at": r[12], "unread": int(r[13])})
+        out.sort(key=lambda x: x["last_at"], reverse=True)
+        return out[:limit]
+
+    def get_admin_by_email(self, email: str) -> dict[str, Any] | None:
+        row = self._exec(
+            "SELECT id, email, password_hash, name FROM admin_users WHERE LOWER(email) = LOWER(?)", (email.strip(),), fetch="one"
+        )
+        return {"id": row[0], "email": row[1], "password_hash": row[2], "name": row[3]} if row else None
+
+    def get_admin(self, admin_id: str) -> dict[str, Any] | None:
+        row = self._exec("SELECT id, email, name FROM admin_users WHERE id = ?", (admin_id,), fetch="one")
+        return {"id": row[0], "email": row[1], "name": row[2]} if row else None
+
+    def touch_admin(self, admin_id: str, now: float | None = None) -> None:
+        self._exec("UPDATE admin_users SET last_seen_at = ? WHERE id = ?", (now or time.time(), admin_id))
+
+    def admins_online(self, within_s: float = 60, now: float | None = None) -> int:
+        row = self._exec(
+            "SELECT COUNT(*) FROM admin_users WHERE last_seen_at > ?", ((now or time.time()) - within_s,), fetch="one"
+        )
+        return int(row[0])
+
+    def upsert_admin(self, admin_id: str, email: str, password_hash: str, name: str) -> None:
+        self._exec(
+            "INSERT INTO admin_users (id, email, password_hash, name) VALUES (?, ?, ?, ?) "
+            "ON CONFLICT (email) DO UPDATE SET password_hash = excluded.password_hash, name = excluded.name",
+            (admin_id, email.strip().lower(), password_hash, name.strip()),
+        )

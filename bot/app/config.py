@@ -50,6 +50,10 @@ class Settings(BaseSettings):
     # Serverless hosts (Vercel): process each WhatsApp message before answering Meta (no background work).
     process_inline: bool = False
 
+    # Admin inbox (/admin): signs the login cookie. Long random string; empty = admin disabled.
+    admin_secret: str = ""
+    admin_session_days: int = 7
+
     # Conversation limits
     max_replies_per_hour: int = 20
     history_size: int = 20
