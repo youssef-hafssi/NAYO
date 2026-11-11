@@ -81,21 +81,37 @@ def create_order(body: OrderIn, orders: OrdersRepo, store: Store) -> OrderOut:
 
     if not written:
         orders.append(
-            {
-                "order_number": number,
-                "created_at": now_local(),
-                "name": body.name,
-                "phone": body.phone,
-                "quantity": body.quantity,
-                "total": total,
-                "status": "new",
-                "notes": "" if not body.orderNumber else "numéro de secours (site)",
-                "updated_at": now_local(),
-            }
+            order_row(number, body.name, body.phone, body.quantity, "new",
+                      "" if not body.orderNumber else "numéro de secours (site)")
         )
         store.mark_written(body.clientId)
         log.info("order %s created (qty %d, %d MAD)", number, body.quantity, total)
     return OrderOut(orderNumber=number, quantity=body.quantity, total=total)
 
 
-__all__ = ["OrderIn", "OrderOut", "create_order", "PRODUCT_NAME"]
+def order_row(number: str, name: str, phone: str, quantity: int, status: str, notes: str = "") -> dict:
+    """One order row, identical whether it comes from the website or from WhatsApp."""
+    return {
+        "order_number": number,
+        "created_at": now_local(),
+        "name": name,
+        "phone": phone,
+        "quantity": quantity,
+        "total": order_total(quantity),
+        "status": status,
+        "notes": notes,
+        "updated_at": now_local(),
+    }
+
+
+def create_bot_order(orders: OrdersRepo, store: Store, *, name: str, phone: str, quantity: int = 1) -> dict:
+    """A client asks for an additional order on WhatsApp: same numbering and same store as POST /orders
+    (so it is also mirrored to the Google Sheet). Status awaiting_details: the bot collects the rest."""
+    number = f"NAYO-{store.next_order_number()}"
+    row = order_row(number, name, phone, quantity, "awaiting_details", "[bot] commande créée par WhatsApp")
+    orders.append(row)
+    log.info("order %s created from WhatsApp (qty %d)", number, quantity)
+    return {**row, "city": "", "address": "", "whatsapp_from": phone}
+
+
+__all__ = ["OrderIn", "OrderOut", "create_order", "create_bot_order", "order_row", "PRODUCT_NAME"]

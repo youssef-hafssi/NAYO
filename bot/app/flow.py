@@ -12,6 +12,7 @@ import time
 from typing import Any, Callable
 
 from .ai import AI, AIError, AIResult
+from .orders import create_bot_order
 from .phone import normalize_phone
 from .pricing import MAX_QTY, SHIPPING, UNIT_PRICE, order_total
 from .sheets import OPEN_STATUSES, OrdersRepo
@@ -30,7 +31,21 @@ REPLY_LANGUAGE = {
     "en": "English",
 }
 MAX_FAILED = 2
-ORDER_ACTIONS = {"confirm", "cancel", "provide_details", "change_quantity"}
+ORDER_ACTIONS = {"confirm", "cancel", "provide_details", "change_quantity", "new_order", "add_or_new_order"}
+
+# Stages for "another order" (stored in conversations.stage, value after the colon):
+#   new_or_add:<extra units>   we asked "Nouvelle commande, ou ajouter à la commande X ?"
+#   new_qty:<previous order>   new order created, we asked how many units
+#   same_addr:<previous order> we proposed the previous order's address
+PENDING_QUESTIONS = {
+    "new_or_add": "We asked: a NEW separate order, or ADD to the current order? Answers like new/jdida/nouvelle/"
+                  "separate -> new_order; add/zid/ajouter/f nfs la commande -> change_quantity (quantity null unless "
+                  "a number is given).",
+    "new_qty": "We asked how many units the client wants for the new order: a number -> change_quantity with that "
+               "number in quantity.",
+    "same_addr": "We asked whether to deliver to the same address as the previous order: yes -> confirm; a different "
+                 "address -> provide_details; no -> other.",
+}
 ALERT_EVERY_S = 3600  # at most one owner alert per order per hour
 
 
@@ -197,6 +212,9 @@ class Bot:
             "waiting_for_yes_to_recap": conv.stage == "await_yes",
             "reply_language": REPLY_LANGUAGE[lang],
         }
+        pending = PENDING_QUESTIONS.get((conv.stage or "").split(":", 1)[0])
+        if pending:
+            context["pending_question"] = pending
         history = self.store.recent_messages(phone, self.history_size)[:-1]  # last one is passed separately
         try:
             r = self.ai.run(context, history, text)
@@ -213,6 +231,12 @@ class Bot:
         if r.needs_human and action:
             # e.g. "je confirme, et ça arrive quand ?": the bot handles the order, a human answers the rest.
             self._notify_human(phone, order, text, f"question en plus ({r.intent})")
+
+        # "Another order", and the answers to our own questions about it. Runs before any branch that could
+        # reopen or modify a confirmed / cancelled order.
+        r = self._handle_more(phone, text, order, conv, lang, r)
+        if r is None:
+            return
 
         if status == "needs_human":
             if not action:
@@ -313,6 +337,129 @@ class Bot:
             return
 
         self._advance(phone, order, conv, lang, prefix=prefix, greet=status == "new" and not updates and not prefix)
+
+    # ------------------------------------------------------------------ another order
+    def _handle_more(
+        self, phone: str, text: str, order: dict, conv: Conversation, lang: str, r: AIResult
+    ) -> AIResult | None:
+        """Returns None when the message was fully handled here, otherwise the (possibly rewritten) AI result
+        for the normal flow."""
+        kind, _, arg = (conv.stage or "").partition(":")
+        status = order["status"]
+        number = order["order_number"]
+        qty = _int(order.get("quantity"), 1)
+
+        if kind == "new_or_add":  # answer to "Nouvelle commande, ou ajouter à la commande X ?"
+            extra = max(1, _int(arg, 1))
+            if r.intent == "new_order":
+                self._set_stage(phone, conv, "")
+                self._start_new_order(phone, order, conv, lang, r.quantity or extra)
+                return None
+            if r.intent == "change_quantity":
+                self._set_stage(phone, conv, "")
+                return r if r.quantity is not None else r.model_copy(update={"quantity": qty + extra})
+            if r.intent == "question":
+                self._send(phone, r.reply)
+                return None
+            if r.intent in ("add_or_new_order", "other", "confirm"):  # still unclear: ask again, change nothing
+                self._send(phone, t("new_or_add", lang, number=number))
+                return None
+            self._set_stage(phone, conv, "")
+            return r
+
+        if kind == "new_qty":  # new order created, waiting for its quantity
+            if r.quantity is not None:
+                if not 1 <= r.quantity <= MAX_QTY:
+                    self._escalate(phone, order, text, f"quantité demandée: {r.quantity}")
+                    return None
+                self._set_quantity(order, r.quantity)
+                prefix = [t("quantity_updated", lang, qty=r.quantity, total=order_total(r.quantity))]
+                self._propose_address(phone, order, conv, lang, arg, prefix)
+                return None
+            if r.intent == "cancel":
+                self._set_stage(phone, conv, "")
+                return r
+            self._send(phone, r.reply if r.intent == "question" else t("ask_quantity", lang))
+            return None
+
+        if kind == "same_addr":  # we proposed the previous order's address
+            if r.intent == "confirm" and not (r.city or r.address):
+                prev = self.orders.get(arg)
+                if prev and prev.get("city") and prev.get("address"):
+                    self.orders.update(number, city=prev["city"], address=prev["address"])
+                    order.update(city=prev["city"], address=prev["address"])
+                    self._set_stage(phone, conv, "")
+                    self._advance(phone, order, conv, lang, prefix=[], greet=False)  # recap, then waits for "yes"
+                    return None
+            if r.city or r.address or r.intent in ("provide_details", "change_quantity", "cancel"):
+                self._set_stage(phone, conv, "")
+                return r
+            if r.intent == "question":
+                self._send(phone, r.reply)
+                return None
+            self._set_stage(phone, conv, "details")  # "no": ask for the new address
+            self._send(phone, t("ask_details", lang))
+            return None
+
+        if r.intent == "new_order":
+            if status in ("confirmed", "cancelled"):
+                self._start_new_order(phone, order, conv, lang, r.quantity)
+            else:  # an order is still open: don't create a second one
+                self._send(phone, t("open_order_exists", lang, number=number, qty=qty))
+            return None
+
+        if r.intent == "add_or_new_order":
+            extra = r.quantity if r.quantity and r.quantity > 0 else 1
+            if status == "confirmed":  # ambiguous: ask, change nothing
+                self._set_stage(phone, conv, f"new_or_add:{extra}")
+                self._send(phone, t("new_or_add", lang, number=number))
+                return None
+            if status == "cancelled":
+                self._start_new_order(phone, order, conv, lang, extra)
+                return None
+            # The current order is still open: more units simply go on it.
+            return r.model_copy(update={"intent": "change_quantity", "quantity": qty + extra})
+
+        return r
+
+    def _start_new_order(self, phone: str, old: dict, conv: Conversation, lang: str, quantity: int | None) -> None:
+        if quantity is not None and not 1 <= quantity <= MAX_QTY:
+            self._escalate(phone, old, f"nouvelle commande de {quantity}", f"quantité demandée: {quantity}")
+            return
+        new = create_bot_order(self.orders, self.store, name=old["name"], phone=old["phone"], quantity=quantity or 1)
+        number = new["order_number"]
+        self.orders.update(number, whatsapp_from=phone)
+        log.info("%s: new order %s from WhatsApp (previous %s untouched)", _mask(phone), number, old["order_number"])
+        conv.order_number, conv.failed_attempts = number, 0
+        self.store.update_conv(phone, order_number=number, failed_attempts=0)
+        prefix = [t("new_order_created", lang, number=number)]
+        if quantity is None:
+            self._set_stage(phone, conv, f"new_qty:{old['order_number']}")
+            self._send(phone, "\n".join(prefix + [t("ask_quantity", lang)]))
+            return
+        prefix.append(t("quantity_updated", lang, qty=quantity, total=order_total(quantity)))
+        self._propose_address(phone, new, conv, lang, old["order_number"], prefix)
+
+    def _propose_address(
+        self, phone: str, order: dict, conv: Conversation, lang: str, prev_number: str, prefix: list[str]
+    ) -> None:
+        prev = self.orders.get(prev_number) if prev_number else None
+        if prev and prev.get("city") and prev.get("address"):
+            self._set_stage(phone, conv, f"same_addr:{prev_number}")
+            ask = t("same_address", lang, city=prev["city"], address=prev["address"])
+        else:
+            self._set_stage(phone, conv, "details")
+            ask = t("ask_details", lang)
+        self._send(phone, "\n".join(prefix + [ask]))
+
+    def _set_quantity(self, order: dict, quantity: int) -> None:
+        total = order_total(quantity)
+        self.orders.update(order["order_number"], quantity=quantity, total=total)
+        order["quantity"], order["total"] = quantity, total
+
+    def _set_stage(self, phone: str, conv: Conversation, stage: str) -> None:
+        self.store.update_conv(phone, stage=stage)
+        conv.stage = stage
 
     def _advance(self, phone: str, order: dict, conv: Conversation, lang: str, *, prefix: list[str], greet: bool) -> None:
         """Move the order forward: ask what's missing, or send the recap once city + address are known."""

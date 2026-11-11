@@ -11,7 +11,10 @@ from .prompts import SYSTEM_PROMPT, build_user_turn
 
 log = logging.getLogger("nayo.ai")
 
-Intent = Literal["confirm", "cancel", "provide_details", "question", "change_quantity", "complaint", "other"]
+Intent = Literal[
+    "confirm", "cancel", "provide_details", "question", "change_quantity", "new_order", "add_or_new_order",
+    "complaint", "other",
+]
 
 
 class AIResult(BaseModel):

@@ -14,6 +14,36 @@ T: dict[str, dict[str, str]] = {
         "darija": "Salam 😊 3afak sift lina numéro dyal la commande (bhal NAYO-1043), kayn f la page dyal la confirmation.",
         "ar": "السلام 😊 عافاك صيفط لينا رقم الطلب (بحال NAYO-1043)، كاين فصفحة التأكيد.",
     },
+    "new_or_add": {
+        "fr": "Nouvelle commande, ou ajouter à la commande {number} ?",
+        "darija": "Bghiti commande jdida, wla nzidoha f la commande {number}?",
+        "ar": "بغيتي طلب جديد، ولا نزيدوها فالطلب {number}؟",
+        "en": "A new order, or add it to order {number}?",
+    },
+    "new_order_created": {
+        "fr": "C'est noté, nouvelle commande {number} 😊",
+        "darija": "Safi, commande jdida {number} 😊",
+        "ar": "صافي، طلب جديد {number} 😊",
+        "en": "Noted, new order {number} 😊",
+    },
+    "ask_quantity": {
+        "fr": "Combien de NAYO voulez-vous ?",
+        "darija": "Chhal mn NAYO bghiti?",
+        "ar": "شحال من NAYO بغيتي؟",
+        "en": "How many NAYO would you like?",
+    },
+    "same_address": {
+        "fr": "Même adresse : {city}, {address} ?",
+        "darija": "Nfs l'adresse: {city}, {address}?",
+        "ar": "نفس العنوان: {city}، {address}؟",
+        "en": "Same address: {city}, {address}?",
+    },
+    "open_order_exists": {
+        "fr": "Vous avez déjà une commande en cours ({number}, {qty} × NAYO). Voulez-vous changer la quantité ?",
+        "darija": "3ndek deja commande ma zal ma tsaliyatch ({number}, {qty} × NAYO). Bghiti tbddel l quantité?",
+        "ar": "عندك طلب مازال ما تسالاش ({number}، {qty} × NAYO). بغيتي تبدل الكمية؟",
+        "en": "You already have an order in progress ({number}, {qty} × NAYO). Do you want to change the quantity?",
+    },
     "order_pending": {
         "fr": "Merci ! Votre commande {number} est en cours d'enregistrement, nous revenons vers vous très vite 🙏",
         "darija": "Choukran! La commande {number} ghadi tsajjel daba, ghadi nrj3o lik dghya 🙏",

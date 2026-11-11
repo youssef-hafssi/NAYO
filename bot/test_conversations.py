@@ -31,6 +31,7 @@ BASE = {
     "waiting_for_yes_to_recap": False,
 }
 RECAP = {**BASE, "city_known": True, "address_known": True, "waiting_for_yes_to_recap": True}
+CONFIRMED = {**BASE, "status": "confirmed", "quantity": 5, "total_mad": 965, "city_known": True, "address_known": True}
 RECAP_HISTORY = [
     ("client", "Bonjour NAYO, je confirme ma commande NAYO-1043 – 209 MAD – Salma"),
     ("bot", "Merci Salma pour votre commande NAYO ! 😊 Pour la livraison, envoyez-nous votre ville et votre adresse complète."),
@@ -40,6 +41,12 @@ RECAP_HISTORY = [
 
 # (message, context, history, expected intent — for a quick eye check)
 CASES = [
+    # another order vs. changing the current one (the order below is already confirmed, 5 units)
+    ("Bghit commande alhra", CONFIRMED, [], "new_order"),
+    ("je veux commander encore", CONFIRMED, [], "new_order"),
+    ("bghit ncommandi 3awtani 2", CONFIRMED, [], "new_order (quantity 2)"),
+    ("zidni wahda", CONFIRMED, [], "add_or_new_order (quantity 1)"),
+    ("rdha 3 f had la commande", CONFIRMED, [], "change_quantity (3)"),
     ("wakha confirmi", RECAP, RECAP_HISTORY, "confirm"),
     ("waxa", RECAP, RECAP_HISTORY, "confirm"),
     ("ok safi", RECAP, RECAP_HISTORY, "confirm"),

@@ -368,3 +368,130 @@ def test_bound_confirmed_order_still_used_when_no_fresh_order(say, orders, ai, s
     ai.push("question", "189 MAD")
     say("chhal taman?")
     assert ai.calls[-1][0]["order_number"] == "NAYO-1001"
+
+
+# ---------------------------------------------------------------- another order (new_order / add_or_new_order)
+def _confirmed_a(orders, store, qty=5):
+    orders.add("NAYO-0901", "Salma", CLIENT, quantity=qty, status="confirmed", city="Agadir", address="hay salam")
+    store.update_conv(CLIENT, order_number="NAYO-0901", stage="")
+
+
+def _others(orders):
+    return [r for r in orders.rows if r["order_number"] != "NAYO-0901"]
+
+
+def test_another_order_on_confirmed_creates_a_new_one_and_leaves_the_old_untouched(say, orders, wa, ai, store):
+    _confirmed_a(orders, store, qty=5)
+    ai.push("new_order", "x")
+    say("Bghit commande alhra")  # the live case of 11 Nov
+    a = orders.get("NAYO-0901")
+    assert (a["status"], a["quantity"], a["total"]) == ("confirmed", "5", "965")  # untouched
+    [b] = _others(orders)
+    assert (b["status"], b["phone"], b["name"]) == ("awaiting_details", CLIENT, "Salma")
+    assert b["notes"] == "[bot] commande créée par WhatsApp" and b["whatsapp_from"] == CLIENT
+    assert store.get_conv(CLIENT).order_number == b["order_number"]
+    assert b["order_number"] in wa.to(CLIENT)[-1] and "Combien" in wa.to(CLIENT)[-1]  # asks the quantity
+
+    ai.push("change_quantity", "x", quantity=2)
+    say("2")
+    b = orders.get(b["order_number"])
+    assert (b["quantity"], b["total"]) == ("2", "398")
+    assert wa.to(CLIENT)[-1].endswith("Même adresse : Agadir, hay salam ?")  # proposed, not copied silently
+    assert b["city"] == "" and b["address"] == ""
+
+    ai.push("confirm", "x")
+    say("oui")
+    b = orders.get(b["order_number"])
+    assert (b["city"], b["address"], b["status"]) == ("Agadir", "hay salam", "awaiting_details")
+    assert "398 MAD" in wa.to(CLIENT)[-1] and "c'est bon ?" in wa.to(CLIENT)[-1]  # recap, waits for the yes
+
+    ai.push("confirm", "x")
+    say("oui c'est bon")
+    assert orders.get(b["order_number"])["status"] == "confirmed"
+    a = orders.get("NAYO-0901")
+    assert (a["status"], a["quantity"]) == ("confirmed", "5")
+
+
+def test_new_order_with_a_quantity_and_a_different_address(say, orders, wa, ai, store):
+    _confirmed_a(orders, store)
+    ai.push("new_order", "x", quantity=3)
+    say("je veux commander encore 3")
+    [b] = _others(orders)
+    assert (b["quantity"], b["total"]) == ("3", "587")
+    assert "Même adresse" in wa.to(CLIENT)[-1]
+    ai.push("other", "x")
+    say("non")  # not the same address
+    assert "adresse complète" in wa.to(CLIENT)[-1]
+    ai.push("provide_details", "x", city="Rabat", address="Agdal, rue 5")
+    say("Rabat, Agdal rue 5")
+    b = orders.get(b["order_number"])
+    assert (b["city"], b["address"]) == ("Rabat", "Agdal, rue 5") and "587 MAD" in wa.to(CLIENT)[-1]
+    assert orders.get("NAYO-0901")["city"] == "Agadir"
+
+
+def test_new_order_while_an_order_is_still_open_asks_about_the_quantity(say, orders, wa, ai, store):
+    orders.add("NAYO-0902", "Salma", CLIENT, quantity=1, status="awaiting_details")
+    ai.push("new_order", "x")
+    say("je veux commander encore")
+    assert len(orders.rows) == 1  # no second order
+    o = orders.get("NAYO-0902")
+    assert (o["quantity"], o["status"]) == ("1", "awaiting_details")
+    assert "déjà une commande en cours (NAYO-0902, 1 × NAYO)" in wa.to(CLIENT)[-1]
+
+
+def test_ambiguous_more_on_confirmed_asks_first_then_adds(say, orders, wa, ai, store):
+    _confirmed_a(orders, store, qty=5)
+    ai.push("add_or_new_order", "x", quantity=1)
+    say("zidni wahda")
+    a = orders.get("NAYO-0901")
+    assert (a["status"], a["quantity"]) == ("confirmed", "5") and _others(orders) == []  # nothing changed
+    assert "NAYO-0901" in wa.to(CLIENT)[-1] and "?" in wa.to(CLIENT)[-1]  # "Nouvelle commande, ou ajouter …"
+
+    ai.push("other", "x")
+    say("ah")  # still not clear → asked again, still nothing changed
+    assert orders.get("NAYO-0901")["quantity"] == "5" and "NAYO-0901" in wa.to(CLIENT)[-1]
+
+    ai.push("change_quantity", "x")  # "add it to the order", no number
+    say("zidha f la commande")
+    a = orders.get("NAYO-0901")
+    assert (a["quantity"], a["total"], a["status"]) == ("6", "1154", "awaiting_details")  # +1, needs a new yes
+    assert "6 × NAYO" in wa.to(CLIENT)[-1] and _others(orders) == []
+
+
+def test_ambiguous_more_on_confirmed_then_new_order(say, orders, wa, ai, store):
+    _confirmed_a(orders, store, qty=5)
+    ai.push("add_or_new_order", "x", quantity=1)
+    say("zidni wahda")
+    ai.push("new_order", "x")
+    say("commande jdida")
+    [b] = _others(orders)
+    assert b["quantity"] == "1" and "Même adresse : Agadir, hay salam ?" in wa.to(CLIENT)[-1]
+    assert orders.get("NAYO-0901")["quantity"] == "5"
+
+
+def test_explicit_quantity_change_on_confirmed_still_modifies_it(say, orders, wa, ai, store):
+    _confirmed_a(orders, store, qty=1)
+    ai.push("change_quantity", "x", quantity=3)
+    say("rdha 3 f had la commande")
+    a = orders.get("NAYO-0901")
+    assert (a["quantity"], a["total"], a["status"]) == ("3", "587", "awaiting_details") and _others(orders) == []
+
+
+def test_new_whatsapp_order_is_mirrored_to_the_sheet(store, wa, ai, clock):
+    from app.flow import Bot
+    from app.sheets import DbOrders, MirroredOrders
+    from app.whatsapp import IncomingMessage
+
+    posted = []
+
+    class Resp:
+        status_code, text = 200, '{"ok":true}'
+
+    orders = MirroredOrders(DbOrders(store), "https://script.example/exec", "s", post=lambda url, json: posted.append(json) or Resp())
+    orders.append({"order_number": "NAYO-0901", "created_at": "2026-11-01 10:00:00", "name": "Salma", "phone": CLIENT,
+                   "quantity": 5, "total": 965, "status": "confirmed", "city": "Agadir", "address": "hay salam"})
+    bot = Bot(orders, store, wa, ai, clock=clock)
+    ai.push("new_order", "x")
+    bot.handle(IncomingMessage("wamid.mirror", CLIENT, "text", "bghit commande akhra"))
+    new = [p["order"] for p in posted if p["order"]["order_number"] != "NAYO-0901"]
+    assert new and new[0]["status"] == "awaiting_details" and new[0]["notes"] == "[bot] commande créée par WhatsApp"
