@@ -148,3 +148,12 @@ def client(settings, orders, store, bot):
     app = create_app(Services(settings, store, orders, bot))
     with TestClient(app) as c:
         yield c
+
+
+@pytest.fixture
+def say_db():
+    """Send a WhatsApp message to any Bot instance (used with the real DbOrders setups)."""
+    def _say(bot, text: str, sender: str = CLIENT, type_: str = "text") -> None:
+        bot.handle(IncomingMessage(f"wamid.{next(_ids)}", sender, type_, text))
+
+    return _say

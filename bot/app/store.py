@@ -42,6 +42,17 @@ SCHEMA = [
         written INTEGER NOT NULL DEFAULT 0
     )""",
     "CREATE TABLE IF NOT EXISTS order_aliases (alias TEXT PRIMARY KEY, order_number TEXT NOT NULL)",
+    """CREATE TABLE IF NOT EXISTS audit_log (
+        id TEXT PRIMARY KEY,
+        at DOUBLE PRECISION NOT NULL,
+        admin_name TEXT NOT NULL,
+        action TEXT NOT NULL,
+        entity TEXT NOT NULL,
+        entity_id TEXT NOT NULL DEFAULT '',
+        details TEXT NOT NULL DEFAULT ''
+    )""",
+    "CREATE INDEX IF NOT EXISTS audit_entity ON audit_log (entity, entity_id, at)",
+    "CREATE INDEX IF NOT EXISTS audit_at ON audit_log (at)",
     """CREATE TABLE IF NOT EXISTS admin_users (
         id TEXT PRIMARY KEY,
         email TEXT NOT NULL UNIQUE,
@@ -57,10 +68,11 @@ MIGRATIONS = [
     ("conversations", "admin_read_at", "DOUBLE PRECISION"),  # unread counter in the admin inbox
     ("conversations", "internal_notes", "TEXT"),  # team-only notes shown in the admin inbox
     ("admin_users", "last_seen_at", "DOUBLE PRECISION"),  # members online in the admin inbox
+    ("admin_users", "role", "TEXT"),  # 'owner' | 'agent' (existing users become owners)
 ]
 
 RLS_TABLES = ("counters", "processed_messages", "messages", "conversations", "rate_events", "order_requests",
-              "order_aliases", "admin_users")
+              "order_aliases", "admin_users", "audit_log")
 
 CONV_FIELDS = {"last_client_at", "order_number", "stage", "failed_attempts", "verified_order", "lang",
                "taken_over_by", "admin_read_at", "internal_notes"}
@@ -100,6 +112,7 @@ class Store:
             # entirely, while the bot's own connection (table owner) is unaffected.
             for table in RLS_TABLES:
                 self._exec(f"ALTER TABLE {table} ENABLE ROW LEVEL SECURITY")
+        self._exec("UPDATE admin_users SET role = 'owner' WHERE role IS NULL OR role = ''")
 
     def _ensure_column(self, table: str, column: str, decl: str) -> None:
         if self.backend == "postgres":
@@ -273,13 +286,41 @@ class Store:
 
     def get_admin_by_email(self, email: str) -> dict[str, Any] | None:
         row = self._exec(
-            "SELECT id, email, password_hash, name FROM admin_users WHERE LOWER(email) = LOWER(?)", (email.strip(),), fetch="one"
+            "SELECT id, email, password_hash, name, role FROM admin_users WHERE LOWER(email) = LOWER(?)", (email.strip(),),
+            fetch="one",
         )
-        return {"id": row[0], "email": row[1], "password_hash": row[2], "name": row[3]} if row else None
+        return {"id": row[0], "email": row[1], "password_hash": row[2], "name": row[3], "role": row[4] or "owner"} if row else None
 
     def get_admin(self, admin_id: str) -> dict[str, Any] | None:
-        row = self._exec("SELECT id, email, name FROM admin_users WHERE id = ?", (admin_id,), fetch="one")
-        return {"id": row[0], "email": row[1], "name": row[2]} if row else None
+        row = self._exec(
+            "SELECT id, email, name, role, password_hash FROM admin_users WHERE id = ?", (admin_id,), fetch="one"
+        )
+        return {"id": row[0], "email": row[1], "name": row[2], "role": row[3] or "owner", "password_hash": row[4]} if row else None
+
+    def set_admin_password(self, admin_id: str, password_hash: str) -> None:
+        self._exec("UPDATE admin_users SET password_hash = ? WHERE id = ?", (password_hash, admin_id))
+
+    # -- audit log -----------------------------------------------------------------------------
+    def audit(self, admin_name: str, action: str, entity: str, entity_id: str = "", details: str = "",
+              now: float | None = None) -> None:
+        import uuid
+
+        self._exec(
+            "INSERT INTO audit_log (id, at, admin_name, action, entity, entity_id, details) VALUES (?, ?, ?, ?, ?, ?, ?)",
+            (uuid.uuid4().hex, now or time.time(), admin_name, action, entity, str(entity_id), details[:1000]),
+        )
+
+    def _audit_all(self, limit: int = 500) -> list[dict[str, Any]]:
+        rows = self._exec("SELECT at, admin_name, action, entity, entity_id, details FROM audit_log ORDER BY at DESC LIMIT ?",
+                          (limit,), fetch="all")
+        return [{"at": r[0], "admin_name": r[1], "action": r[2], "entity": r[3], "entity_id": r[4], "details": r[5]} for r in rows]
+
+    def audit_for(self, entity: str, entity_id: str, limit: int = 100) -> list[dict[str, Any]]:
+        rows = self._exec(
+            "SELECT at, admin_name, action, details FROM audit_log WHERE entity = ? AND entity_id = ? ORDER BY at DESC LIMIT ?",
+            (entity, str(entity_id), limit), fetch="all",
+        )
+        return [{"at": r[0], "admin_name": r[1], "action": r[2], "details": r[3]} for r in rows]
 
     def touch_admin(self, admin_id: str, now: float | None = None) -> None:
         self._exec("UPDATE admin_users SET last_seen_at = ? WHERE id = ?", (now or time.time(), admin_id))
@@ -290,9 +331,12 @@ class Store:
         )
         return int(row[0])
 
-    def upsert_admin(self, admin_id: str, email: str, password_hash: str, name: str) -> None:
+    def upsert_admin(self, admin_id: str, email: str, password_hash: str, name: str, role: str = "owner") -> None:
+        if role not in ("owner", "agent"):
+            raise ValueError("role must be owner or agent")
         self._exec(
-            "INSERT INTO admin_users (id, email, password_hash, name) VALUES (?, ?, ?, ?) "
-            "ON CONFLICT (email) DO UPDATE SET password_hash = excluded.password_hash, name = excluded.name",
-            (admin_id, email.strip().lower(), password_hash, name.strip()),
+            "INSERT INTO admin_users (id, email, password_hash, name, role) VALUES (?, ?, ?, ?, ?) "
+            "ON CONFLICT (email) DO UPDATE SET password_hash = excluded.password_hash, name = excluded.name, "
+            "role = excluded.role",
+            (admin_id, email.strip().lower(), password_hash, name.strip(), role),
         )

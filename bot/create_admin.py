@@ -23,6 +23,8 @@ def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--email", required=True)
     ap.add_argument("--name", required=True, help="shown to customers' threads as the agent name, e.g. Sara")
+    ap.add_argument("--role", choices=("owner", "agent"), default=None,
+                    help="owner: everything (stock, revenue, exports, team); agent: inbox, orders, customers, follow-ups")
     ap.add_argument("--password", help="avoid on shared machines: it stays in the shell history")
     ap.add_argument("--sql", action="store_true", help="print an INSERT statement instead of writing to the database")
     args = ap.parse_args()
@@ -36,19 +38,24 @@ def main() -> int:
         return 1
 
     admin_id, email, name, pw_hash = uuid.uuid4().hex, args.email.strip().lower(), args.name.strip(), hash_password(password)
+    role = args.role or "agent"
     if args.sql:
         q = lambda s: "'" + s.replace("'", "''") + "'"  # noqa: E731
         print(
-            "INSERT INTO admin_users (id, email, password_hash, name) VALUES "
-            f"({q(admin_id)}, {q(email)}, {q(pw_hash)}, {q(name)}) "
-            "ON CONFLICT (email) DO UPDATE SET password_hash = excluded.password_hash, name = excluded.name;"
+            "INSERT INTO admin_users (id, email, password_hash, name, role) VALUES "
+            f"({q(admin_id)}, {q(email)}, {q(pw_hash)}, {q(name)}, {q(role)}) "
+            "ON CONFLICT (email) DO UPDATE SET password_hash = excluded.password_hash, name = excluded.name, "
+            "role = excluded.role;"
         )
         return 0
 
     s = get_settings()
     store = Store(s.state_backend, database_url=s.database_url, sqlite_path=s.sqlite_path)
-    store.upsert_admin(admin_id, email, pw_hash, name)
-    print(f"OK : {name} <{email}> peut se connecter sur /admin")
+    existing = store.get_admin_by_email(email)
+    if existing and not args.role:
+        role = existing["role"]  # resetting a password never changes the role
+    store.upsert_admin(admin_id, email, pw_hash, name, role)
+    print(f"OK : {name} <{email}> ({role}) peut se connecter sur /admin")
     return 0
 
 

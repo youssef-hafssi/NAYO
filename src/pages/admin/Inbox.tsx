@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type FormEvent } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
+import { Link, useSearchParams } from 'react-router-dom'
 import { ArrowLeft, ArrowRight, Clock, X } from 'lucide-react'
 import {
   adminApi,
@@ -8,149 +9,14 @@ import {
   type Message,
   type Status,
   type Thread,
-} from '../lib/adminApi'
+} from '../../lib/adminApi'
+import { Chip, FILTERS, formatPhone, hhmm, listTime, POLL_MS, StatusPill, WINE, windowLeft } from './ui'
 
 /*
- * Admin inbox (/admin) — approved mockup: header, conversation list with filter chips, chat thread with
+ * Admin inbox (/admin/inbox) — approved mockup: header, conversation list with filter chips, chat thread with
  * bot / customer / agent bubbles, 24h-window banner, "Bot actif ↔ Repris par {agent}" toggle, order panel.
- * Fixed px layout (the landing's viewport-scaled root font-size is reset to 16px while this page is open).
- * Data refreshes by polling every 4 s.
+ * Optimistic send, mobile layout (list ↔ thread, order sheet) and polling every 4 s.
  */
-
-const POLL_MS = 4000
-const WINE = '#3a0a10'
-
-const STATUS_LABEL: Record<string, string> = {
-  needs_human: "Besoin d'aide",
-  confirmed: 'Confirmée',
-  cancelled: 'Annulée',
-  new: 'Nouvelle',
-  awaiting_details: 'En cours',
-}
-const STATUS_PILL: Record<string, string> = {
-  confirmed: 'bg-[#e7f6ec] text-[#1f8a4c]',
-  needs_human: 'bg-[#fdf0de] text-[#c2650a]',
-  cancelled: 'bg-[#efefef] text-[#6b6b6b]',
-  new: 'bg-[#eef2fb] text-[#3b5bab]',
-  awaiting_details: 'bg-[#eef2fb] text-[#3b5bab]',
-}
-const FILTERS: { key: Filter; label: string }[] = [
-  { key: 'all', label: 'Tous' },
-  { key: 'needs_human', label: "Besoin d'aide" },
-  { key: 'confirmed', label: 'Confirmées' },
-  { key: 'cancelled', label: 'Annulées' },
-]
-
-const formatPhone = (p: string) => {
-  const local = p.startsWith('212') && p.length === 12 ? '0' + p.slice(3) : p
-  return local.length === 10 ? local.replace(/(\d{4})(\d{2})(\d{2})(\d{2})/, '$1 $2 $3 $4') : '+' + p
-}
-const hhmm = (ts: number) =>
-  new Date(ts * 1000).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })
-const listTime = (ts: number) => {
-  const d = new Date(ts * 1000)
-  const today = new Date()
-  const yesterday = new Date(Date.now() - 86400000)
-  if (d.toDateString() === today.toDateString()) return hhmm(ts)
-  if (d.toDateString() === yesterday.toDateString()) return 'Hier'
-  return d.toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit' })
-}
-const windowLeft = (expires: number) => {
-  const mins = Math.max(0, Math.floor((expires * 1000 - Date.now()) / 60000))
-  return `${Math.floor(mins / 60)} h ${String(mins % 60).padStart(2, '0')}`
-}
-
-function StatusPill({ status }: { status: Status }) {
-  if (!status) return null
-  return (
-    <span className={`inline-block whitespace-nowrap r-5 px-8 py-2 fs-11.5 lh-16 font-semibold ${STATUS_PILL[status] ?? ''}`}>
-      {STATUS_LABEL[status] ?? status}
-    </span>
-  )
-}
-
-function Chip({ active, onClick, children }: { active?: boolean; onClick?: () => void; children: React.ReactNode }) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      aria-pressed={active}
-      className={`h-40 rounded-pill border px-14 fs-13 md:h-30 md:px-12 font-medium text-[#1a1a1a] transition-colors ${
-        active ? 'border-[#1a1a1a] bg-[#e4e4e4] outline outline-1 outline-[#1a1a1a]' : 'border-[#1a1a1a] bg-[#f4f4f4] hover:bg-[#ebebeb]'
-      }`}
-    >
-      {children}
-    </button>
-  )
-}
-
-// ------------------------------------------------------------------ login
-function Login({ onDone }: { onDone: () => void }) {
-  const [email, setEmail] = useState('')
-  const [password, setPassword] = useState('')
-  const [error, setError] = useState('')
-  const [busy, setBusy] = useState(false)
-  const submit = async (e: FormEvent) => {
-    e.preventDefault()
-    setBusy(true)
-    setError('')
-    try {
-      await adminApi.login(email, password)
-      onDone()
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Connexion impossible.')
-    } finally {
-      setBusy(false)
-    }
-  }
-  return (
-    <div className="grid min-h-screen place-items-center bg-[#f8f4f1] px-16">
-      <form onSubmit={submit} className="w-full max-w-380 r-16 border border-[#ece2dd] bg-white p-32 shadow-[0_10px_30px_rgba(58,10,16,0.06)]">
-        <div className="font-serif fs-24 font-semibold tracking-[0.22em]" style={{ color: WINE }}>
-          NAYO
-        </div>
-        <h1 className="mt-6 fs-15 text-[#1f1f1f]">Boîte de réception — connexion</h1>
-        <label className="mt-24 block fs-12 font-semibold uppercase tracking-[0.06em] text-[#8a8a8a]" htmlFor="email">
-          Email
-        </label>
-        <input
-          id="email"
-          type="email"
-          autoComplete="username"
-          required
-          value={email}
-          onChange={(e) => setEmail(e.target.value)}
-          className="mt-6 h-42 w-full r-10 border border-[#ecdcd6] bg-[#fbf5f2] px-14 fs-14 outline-none focus:border-[#7a1a2a]"
-        />
-        <label className="mt-16 block fs-12 font-semibold uppercase tracking-[0.06em] text-[#8a8a8a]" htmlFor="pw">
-          Mot de passe
-        </label>
-        <input
-          id="pw"
-          type="password"
-          autoComplete="current-password"
-          required
-          value={password}
-          onChange={(e) => setPassword(e.target.value)}
-          className="mt-6 h-42 w-full r-10 border border-[#ecdcd6] bg-[#fbf5f2] px-14 fs-14 outline-none focus:border-[#7a1a2a]"
-        />
-        {error && (
-          <p role="alert" className="mt-12 fs-13 text-[#b4233a]">
-            {error}
-          </p>
-        )}
-        <button
-          type="submit"
-          disabled={busy}
-          className="mt-22 h-44 w-full rounded-pill fs-14.5 font-semibold text-white disabled:cursor-wait"
-          style={{ background: WINE }}
-        >
-          {busy ? 'Connexion…' : 'Se connecter'}
-        </button>
-      </form>
-    </div>
-  )
-}
 
 // ------------------------------------------------------------------ bubbles
 function Bubble({ m, pending = false }: { m: Message; pending?: boolean }) {
@@ -207,7 +73,12 @@ function OrderPanel({
       {order ? (
         <>
           <div className="fs-11 font-bold uppercase tracking-[0.06em] text-[#8a8a8a]">Commande</div>
-          <div className="mt-4 fs-17 font-bold">{order.order_number}</div>
+          <div className="mt-4 flex items-baseline justify-between gap-8">
+            <span className="fs-17 font-bold">{order.order_number}</span>
+            <Link to={`/admin/orders/${order.order_number}`} className="fs-12.5 font-semibold text-[#7a1a2a] underline-offset-2 hover:underline">
+              Voir la commande
+            </Link>
+          </div>
           <div className="mt-14 flex flex-wrap gap-8">
             <Chip active={order.status === 'needs_human'} onClick={() => onStatus('needs_human')}>
               Besoin d'aide
@@ -274,20 +145,21 @@ function OrderPanel({
 // ------------------------------------------------------------------ inbox
 type PendingMessage = Message & { localId: string; pending: true; phone: string }
 
-function Inbox({ onLogout }: { onLogout: () => void }) {
+export default function Inbox({ onLogout }: { onLogout: () => void }) {
   const [me, setMe] = useState<{ name: string; online: number } | null>(null)
   const [filter, setFilter] = useState<Filter>('all')
   const [search, setSearch] = useState('')
   const [items, setItems] = useState<ConversationItem[]>([])
   const [online, setOnline] = useState(0)
-  const [selected, setSelected] = useState<string | null>(null)
+  const [searchParams] = useSearchParams()
+  const [selected, setSelected] = useState<string | null>(searchParams.get('phone'))
   const [thread, setThread] = useState<Thread | null>(null)
   const [threadLoading, setThreadLoading] = useState(false)
   const [pending, setPending] = useState<PendingMessage[]>([]) // optimistic agent messages, per phone
   const [draft, setDraft] = useState('')
   const [notes, setNotes] = useState('')
   const [error, setError] = useState('')
-  const [mobileView, setMobileView] = useState<'list' | 'thread'>('list') // < 768px: one pane at a time
+  const [mobileView, setMobileView] = useState<'list' | 'thread'>(searchParams.get('phone') ? 'thread' : 'list') // < 768px: one pane at a time
   const [orderOpen, setOrderOpen] = useState(false) // order sheet below 1280px
   const [, setTick] = useState(0)
   const scroller = useRef<HTMLDivElement>(null)
@@ -464,7 +336,7 @@ function Inbox({ onLogout }: { onLogout: () => void }) {
   }
 
   return (
-    <div className="flex h-[100dvh] flex-col bg-white text-[#1a1a1a]">
+    <div className="flex h-full min-h-0 flex-col bg-white text-[#1a1a1a]">
       {/* Header */}
       <header className="flex h-56 shrink-0 items-center border-b border-[#e8e8e8] px-16 md:h-64 md:px-24">
         <span className="font-serif fs-18 font-semibold tracking-[0.2em] md:fs-20" style={{ color: WINE }}>
@@ -699,32 +571,4 @@ function Inbox({ onLogout }: { onLogout: () => void }) {
       )}
     </div>
   )
-}
-
-
-// ------------------------------------------------------------------ page
-export default function Admin() {
-  const [state, setState] = useState<'checking' | 'login' | 'in'>('checking')
-
-  // Fixed px layout: undo the landing page's viewport-scaled root font-size while the admin is open.
-  useLayoutEffect(() => {
-    const html = document.documentElement
-    const prev = html.style.fontSize
-    html.style.fontSize = '16px'
-    document.title = 'Boîte de réception — NAYO'
-    return () => {
-      html.style.fontSize = prev
-    }
-  }, [])
-
-  useEffect(() => {
-    adminApi
-      .me()
-      .then(() => setState('in'))
-      .catch(() => setState('login'))
-  }, [])
-
-  if (state === 'checking') return <div className="min-h-screen bg-[#f8f4f1]" />
-  if (state === 'login') return <Login onDone={() => setState('in')} />
-  return <Inbox onLogout={() => setState('login')} />
 }

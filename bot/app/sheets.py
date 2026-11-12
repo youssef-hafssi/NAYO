@@ -29,7 +29,14 @@ HEADERS = [
 ]
 
 OPEN_STATUSES = ("new", "awaiting_details")
-STATUSES = ("new", "awaiting_details", "confirmed", "cancelled", "needs_human")
+# After "confirmed": shipped → delivered, or returned (client refused / not delivered).
+STATUSES = ("new", "awaiting_details", "confirmed", "shipped", "delivered", "returned", "cancelled", "needs_human")
+CONFIRMED_LIKE = ("confirmed", "shipped", "delivered")  # the order is "on": units are committed
+CLOSED_LIKE = ("cancelled", "returned")
+
+# Extra order fields kept in the database only (the Google Sheet keeps exactly the 12 HEADERS).
+EXTRA_COLUMNS = ["carrier", "tracking", "delivered_at", "return_reason", "source", "internal_note"]
+ALL_COLUMNS = HEADERS + EXTRA_COLUMNS
 
 
 def now_local() -> str:
@@ -92,6 +99,7 @@ class SheetOrders:
         return None
 
     def update(self, order_number: str, **fields: Any) -> None:
+        fields = {k: v for k, v in fields.items() if k not in EXTRA_COLUMNS}  # database-only fields
         unknown = set(fields) - set(HEADERS)
         if unknown:
             raise ValueError(f"unknown columns: {unknown}")
@@ -162,6 +170,7 @@ class CsvOrders:
         return next((r for r in reversed(rows) if r["phone"] == phone and r["status"] in statuses), None)
 
     def update(self, order_number: str, **fields: Any) -> None:
+        fields = {k: v for k, v in fields.items() if k not in EXTRA_COLUMNS}  # database-only fields
         unknown = set(fields) - set(HEADERS)
         if unknown:
             raise ValueError(f"unknown columns: {unknown}")
@@ -187,31 +196,37 @@ class DbOrders:
         self.store = store
         cols = ", ".join(f"{h} TEXT NOT NULL DEFAULT ''" for h in HEADERS if h != "order_number")
         store._exec(f"CREATE TABLE IF NOT EXISTS orders (order_number TEXT PRIMARY KEY, {cols})")
+        for col in EXTRA_COLUMNS:
+            store._ensure_column("orders", col, "TEXT NOT NULL DEFAULT ''")
         store._exec("CREATE INDEX IF NOT EXISTS orders_phone ON orders (phone)")
+        store._exec("CREATE INDEX IF NOT EXISTS orders_status_created ON orders (status, created_at)")
+        store._exec("CREATE INDEX IF NOT EXISTS orders_created ON orders (created_at)")
         if store.backend == "postgres":
             store._exec("ALTER TABLE orders ENABLE ROW LEVEL SECURITY")
 
+    SELECT = ", ".join(ALL_COLUMNS)
+
     def _row(self, values: Any) -> dict[str, Any]:
-        return dict(zip(HEADERS, values))
+        return {k: ("" if v is None else v) for k, v in zip(ALL_COLUMNS, values)}
 
     def append(self, order: dict[str, Any]) -> None:
-        cols = ", ".join(HEADERS)
-        marks = ", ".join("?" for _ in HEADERS)
+        cols = ", ".join(ALL_COLUMNS)
+        marks = ", ".join("?" for _ in ALL_COLUMNS)
         self.store._exec(
             f"INSERT INTO orders ({cols}) VALUES ({marks}) ON CONFLICT (order_number) DO NOTHING",
-            tuple(str(order.get(h, "")) for h in HEADERS),
+            tuple(str(order.get(h, "")) for h in ALL_COLUMNS),
         )
 
     def get(self, order_number: str) -> dict[str, Any] | None:
         row = self.store._exec(
-            f"SELECT {', '.join(HEADERS)} FROM orders WHERE UPPER(order_number) = UPPER(?)", (order_number,), fetch="one"
+            f"SELECT {self.SELECT} FROM orders WHERE UPPER(order_number) = UPPER(?)", (order_number,), fetch="one"
         )
         return self._row(row) if row else None
 
     def find_open_by_phone(self, phone: str, statuses: tuple[str, ...] = OPEN_STATUSES) -> dict[str, Any] | None:
         marks = ", ".join("?" for _ in statuses)
         row = self.store._exec(
-            f"SELECT {', '.join(HEADERS)} FROM orders WHERE phone = ? AND status IN ({marks}) "
+            f"SELECT {self.SELECT} FROM orders WHERE phone = ? AND status IN ({marks}) "
             "ORDER BY created_at DESC, order_number DESC LIMIT 1",
             (phone, *statuses),
             fetch="one",
@@ -219,7 +234,7 @@ class DbOrders:
         return self._row(row) if row else None
 
     def update(self, order_number: str, **fields: Any) -> None:
-        unknown = set(fields) - set(HEADERS)
+        unknown = set(fields) - set(ALL_COLUMNS)
         if unknown:
             raise ValueError(f"unknown columns: {unknown}")
         fields["updated_at"] = now_local()
@@ -269,4 +284,8 @@ class MirroredOrders:
 
     def update(self, order_number: str, **fields: Any) -> None:
         self.inner.update(order_number, **fields)
-        self._mirror(order_number)
+        if set(fields) & set(HEADERS):  # database-only fields (carrier, tracking…) are not in the sheet
+            self._mirror(order_number)
+
+    def __getattr__(self, name: str) -> Any:  # extra queries of the inner store (lists, counts…)
+        return getattr(self.inner, name)

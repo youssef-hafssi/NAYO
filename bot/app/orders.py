@@ -82,14 +82,14 @@ def create_order(body: OrderIn, orders: OrdersRepo, store: Store) -> OrderOut:
     if not written:
         orders.append(
             order_row(number, body.name, body.phone, body.quantity, "new",
-                      "" if not body.orderNumber else "numéro de secours (site)")
+                      "" if not body.orderNumber else "numéro de secours (site)", source="website")
         )
         store.mark_written(body.clientId)
         log.info("order %s created (qty %d, %d MAD)", number, body.quantity, total)
     return OrderOut(orderNumber=number, quantity=body.quantity, total=total)
 
 
-def order_row(number: str, name: str, phone: str, quantity: int, status: str, notes: str = "") -> dict:
+def order_row(number: str, name: str, phone: str, quantity: int, status: str, notes: str = "", source: str = "") -> dict:
     """One order row, identical whether it comes from the website or from WhatsApp."""
     return {
         "order_number": number,
@@ -101,6 +101,7 @@ def order_row(number: str, name: str, phone: str, quantity: int, status: str, no
         "status": status,
         "notes": notes,
         "updated_at": now_local(),
+        "source": source,  # database-only column (website | whatsapp)
     }
 
 
@@ -108,7 +109,7 @@ def create_bot_order(orders: OrdersRepo, store: Store, *, name: str, phone: str,
     """A client asks for an additional order on WhatsApp: same numbering and same store as POST /orders
     (so it is also mirrored to the Google Sheet). Status awaiting_details: the bot collects the rest."""
     number = f"NAYO-{store.next_order_number()}"
-    row = order_row(number, name, phone, quantity, "awaiting_details", "[bot] commande créée par WhatsApp")
+    row = order_row(number, name, phone, quantity, "awaiting_details", "[bot] commande créée par WhatsApp", source="whatsapp")
     orders.append(row)
     log.info("order %s created from WhatsApp (qty %d)", number, quantity)
     return {**row, "city": "", "address": "", "whatsapp_from": phone}

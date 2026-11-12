@@ -15,7 +15,7 @@ from .ai import AI, AIError, AIResult
 from .orders import create_bot_order
 from .phone import normalize_phone
 from .pricing import MAX_QTY, SHIPPING, UNIT_PRICE, order_total
-from .sheets import OPEN_STATUSES, OrdersRepo
+from .sheets import CLOSED_LIKE, CONFIRMED_LIKE, OPEN_STATUSES, OrdersRepo
 from .store import Conversation, Store
 from .texts import ESCALATE, detect_lang, first_name, normalize_name, t
 from .whatsapp import IncomingMessage
@@ -157,10 +157,10 @@ class Bot:
             order = self.orders.find_open_by_phone(phone, ("needs_human",))
         if order is None:
             # e.g. "imta twsel?" days later about an order that is already confirmed.
-            order = self.orders.find_open_by_phone(phone, ("confirmed",))
+            order = self.orders.find_open_by_phone(phone, CONFIRMED_LIKE)
         if order is None:
             # A client who cancelled and comes back ("bghit ncommandi") can reactivate their order.
-            order = self.orders.find_open_by_phone(phone, ("cancelled",))
+            order = self.orders.find_open_by_phone(phone, CLOSED_LIKE)
 
         if order is None:
             self._send(phone, t("ask_order_number", lang))
@@ -250,6 +250,10 @@ class Bot:
             order["status"] = status = "awaiting_details"
             log.info("%s taken back by the bot (intent=%s)", order["order_number"], r.intent)
 
+        if status in ("shipped", "delivered") and action and r.intent != "confirm":
+            # Already on its way / delivered: a change can't be applied by the bot — the team decides.
+            self._escalate(phone, order, text, f"{r.intent} sur une commande {status}")
+            return
         if status == "confirmed" and action and r.intent != "confirm":
             # Change after confirmation (quantity / address / cancel): allowed, the order needs a new "yes",
             # and the owner is told — it may already be in preparation.
@@ -258,9 +262,9 @@ class Bot:
             order["status"] = status = "awaiting_details"
             self.store.update_conv(phone, stage="await_yes")
             conv.stage = "await_yes"
-        elif status == "cancelled" and action and r.intent != "cancel":
+        elif status in CLOSED_LIKE and action and r.intent != "cancel":
             # The client changed their mind after cancelling: reactivate, show the recap, ask for a new "yes".
-            self._notify_human(phone, order, text, f"réactivation après annulation ({r.intent})", always=True)
+            self._notify_human(phone, order, text, f"réactivation après {status} ({r.intent})", always=True)
             self.orders.update(order["order_number"], status="awaiting_details")
             order["status"] = status = "awaiting_details"
             self.store.update_conv(phone, stage="")  # a plain "wakha" must lead to the recap, not straight to confirmed
@@ -269,8 +273,8 @@ class Bot:
                 self._advance(phone, order, conv, lang, prefix=[], greet=False)
                 return
 
-        if status not in OPEN_STATUSES:  # confirmed (question / thanks) / cancelled
-            if r.intent in ("question", "other") or (status == "confirmed" and r.intent == "confirm"):
+        if status not in OPEN_STATUSES:  # confirmed / shipped / delivered (question, thanks) or cancelled / returned
+            if r.intent in ("question", "other") or (status in CONFIRMED_LIKE and r.intent == "confirm"):
                 self._send(phone, r.reply)
             else:
                 self._escalate(phone, order, text, f"{r.intent} sur une commande {status}")
@@ -402,7 +406,7 @@ class Bot:
             return None
 
         if r.intent == "new_order":
-            if status in ("confirmed", "cancelled"):
+            if status in CONFIRMED_LIKE + CLOSED_LIKE:
                 self._start_new_order(phone, order, conv, lang, r.quantity)
             else:  # an order is still open: don't create a second one
                 self._send(phone, t("open_order_exists", lang, number=number, qty=qty))
@@ -414,7 +418,7 @@ class Bot:
                 self._set_stage(phone, conv, f"new_or_add:{extra}")
                 self._send(phone, t("new_or_add", lang, number=number))
                 return None
-            if status == "cancelled":
+            if status in ("shipped", "delivered") + CLOSED_LIKE:  # can't add to it: it's a new order
                 self._start_new_order(phone, order, conv, lang, extra)
                 return None
             # The current order is still open: more units simply go on it.
@@ -503,7 +507,7 @@ class Bot:
             notes = (order.get("notes") or "").strip()
             note = f"[bot] {reason} : « {text[:120]} »"
             new_notes = f"{notes} | {note}" if notes else note
-            if order["status"] in ("confirmed", "cancelled"):
+            if order["status"] in CONFIRMED_LIKE + CLOSED_LIKE + ("needs_human",):
                 # A question never undoes a confirmation (or a cancellation): keep the status, note it, alert.
                 self.orders.update(number, notes=new_notes)
             else:

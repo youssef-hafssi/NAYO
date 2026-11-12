@@ -23,13 +23,16 @@ from pydantic import BaseModel, Field
 from .flow import WINDOW_S
 from .phone import normalize_phone
 from .pricing import MAX_QTY, SHIPPING, UNIT_PRICE, order_total
+from .sheets import EXTRA_COLUMNS, STATUSES, now_local
 
 log = logging.getLogger("nayo.admin")
 
 COOKIE = "nayo_admin"
-STATUS_FILTERS = {"all", "needs_human", "confirmed", "cancelled"}
-SETTABLE_STATUSES = {"confirmed", "cancelled", "needs_human"}
-ALL_STATUSES = ("new", "awaiting_details", "confirmed", "cancelled", "needs_human")
+STATUS_FILTERS = {"all", "needs_human", "confirmed", "cancelled", "shipped", "delivered", "returned"}
+SETTABLE_STATUSES = {"confirmed", "shipped", "delivered", "returned", "cancelled", "needs_human"}
+ALL_STATUSES = STATUSES
+EDITABLE_FIELDS = ("name", "phone", "city", "address", "quantity", "carrier", "tracking", "internal_note")
+MIN_PASSWORD = 10
 
 
 # ---------------------------------------------------------------- passwords & sessions
@@ -95,7 +98,27 @@ class SendIn(BaseModel):
 
 
 class StatusIn(BaseModel):
-    status: str
+    status: str = Field(max_length=30)
+    return_reason: str | None = Field(default=None, max_length=300)
+
+
+class OrderEditIn(BaseModel):
+    """Every field optional: only the ones sent are changed (and each change is audited)."""
+
+    model_config = {"extra": "forbid"}
+    name: str | None = Field(default=None, min_length=2, max_length=80)
+    phone: str | None = Field(default=None, min_length=8, max_length=20)
+    city: str | None = Field(default=None, max_length=80)
+    address: str | None = Field(default=None, max_length=300)
+    quantity: int | None = Field(default=None, ge=1, le=MAX_QTY)
+    carrier: str | None = Field(default=None, max_length=60)
+    tracking: str | None = Field(default=None, max_length=80)
+    internal_note: str | None = Field(default=None, max_length=2000)
+
+
+class PasswordIn(BaseModel):
+    current: str = Field(min_length=1, max_length=200)
+    new: str = Field(min_length=MIN_PASSWORD, max_length=200)
 
 
 class NotesIn(BaseModel):
@@ -119,6 +142,20 @@ def build_admin_router(svc: Callable[[], Any], settings: Any) -> APIRouter:
             raise HTTPException(401, "not logged in")
         svc().store.touch_admin(admin["id"])
         return admin
+
+    def owner_only(admin: dict = Depends(current_admin)) -> dict[str, Any]:
+        """Owner-only actions (stock adjust, revenue, exports, team, settings), enforced server-side."""
+        if admin.get("role") != "owner":
+            raise HTTPException(403, "Réservé au propriétaire.")
+        return admin
+
+    def _audit(admin: dict, action: str, entity: str, entity_id: str = "", details: str = "") -> None:
+        svc().store.audit(admin["name"], action, entity, entity_id, details)
+
+    # shared with the routers of the next phases
+    router.current_admin = current_admin  # type: ignore[attr-defined]
+    router.owner_only = owner_only  # type: ignore[attr-defined]
+    router.audit = _audit  # type: ignore[attr-defined]
 
     def _phone(raw: str) -> str:
         p = normalize_phone(raw)
@@ -181,7 +218,18 @@ def build_admin_router(svc: Callable[[], Any], settings: Any) -> APIRouter:
 
     @router.get("/me")
     def me(admin: dict = Depends(current_admin)) -> dict[str, Any]:
-        return {"name": admin["name"], "email": admin["email"], "online": svc().store.admins_online()}
+        return {"name": admin["name"], "email": admin["email"], "role": admin["role"],
+                "online": svc().store.admins_online()}
+
+    @router.post("/me/password")
+    def change_password(body: PasswordIn, admin: dict = Depends(current_admin)) -> dict[str, Any]:
+        if not verify_password(body.current, admin["password_hash"]):
+            raise HTTPException(400, "Mot de passe actuel incorrect.")
+        if body.new == body.current:
+            raise HTTPException(400, "Le nouveau mot de passe doit être différent.")
+        svc().store.set_admin_password(admin["id"], hash_password(body.new))
+        _audit(admin, "password.change", "admin_user", admin["id"])
+        return {"ok": True}
 
     # -- inbox --------------------------------------------------------------------------------
     @router.get("/conversations")
@@ -234,30 +282,95 @@ def build_admin_router(svc: Callable[[], Any], settings: Any) -> APIRouter:
 
     @router.post("/conversations/{phone}/takeover")
     def takeover(phone: str, admin: dict = Depends(current_admin)) -> dict[str, Any]:
-        svc().store.update_conv(_phone(phone), taken_over_by=admin["name"])
+        p = _phone(phone)
+        svc().store.update_conv(p, taken_over_by=admin["name"])
+        _audit(admin, "conversation.takeover", "conversation", p)
         return {"taken_over_by": admin["name"]}
 
     @router.post("/conversations/{phone}/release")
     def release(phone: str, admin: dict = Depends(current_admin)) -> dict[str, Any]:
-        svc().store.update_conv(_phone(phone), taken_over_by=None)
+        p = _phone(phone)
+        svc().store.update_conv(p, taken_over_by=None)
+        _audit(admin, "conversation.release", "conversation", p)
         return {"taken_over_by": None}
 
     @router.post("/conversations/{phone}/notes")
     def notes(phone: str, body: NotesIn, admin: dict = Depends(current_admin)) -> dict[str, Any]:
-        svc().store.update_conv(_phone(phone), internal_notes=body.notes)
+        p = _phone(phone)
+        svc().store.update_conv(p, internal_notes=body.notes)
+        _audit(admin, "conversation.note", "conversation", p, body.notes[:200])
         return {"ok": True}
 
     @router.post("/order/{order_number}/status")
     def set_status(order_number: str, body: StatusIn, admin: dict = Depends(current_admin)) -> dict[str, Any]:
         if body.status not in SETTABLE_STATUSES:
-            raise HTTPException(400, "status must be confirmed, cancelled or needs_human")
+            raise HTTPException(400, "statut invalide")
+        o = svc().orders.get(order_number)
+        if not o:
+            raise HTTPException(404, "order not found")
+        return apply_status(o, body.status, admin, return_reason=body.return_reason)
+
+    def apply_status(o: dict[str, Any], status: str, admin: dict, *, return_reason: str | None = None) -> dict[str, Any]:
+        """The single admin path for a status change (Sheet mirror and stock follow through orders.update)."""
+        old_status = o.get("status", "")
+        old = (o.get("notes") or "").strip()
+        note = f"[{admin['name']}] statut → {status}"
+        fields: dict[str, Any] = {"status": status, "notes": f"{old} | {note}" if old else note}
+        if status == "delivered":
+            fields["delivered_at"] = now_local()
+        reason = (return_reason or "").strip()
+        if status == "returned" and reason:
+            fields["return_reason"] = reason
+        svc().orders.update(o["order_number"], **fields)
+        _audit(admin, "order.status", "order", o["order_number"],
+               f"{old_status} → {status}" + (f" ({reason})" if status == "returned" and reason else ""))
+        return {"order_number": o["order_number"], "status": status}
+
+    router.apply_status = apply_status  # type: ignore[attr-defined]
+
+    def _full_order(o: dict[str, Any]) -> dict[str, Any]:
+        view = _order_view(o) or {}
+        view.update({k: o.get(k, "") or "" for k in EXTRA_COLUMNS})
+        view.update({"notes": o.get("notes", ""), "updated_at": o.get("updated_at", ""),
+                     "whatsapp_from": o.get("whatsapp_from", "")})
+        return view
+
+    @router.get("/orders/{order_number}")
+    def get_order(order_number: str, admin: dict = Depends(current_admin)) -> dict[str, Any]:
+        o = svc().orders.get(order_number)
+        if not o:
+            raise HTTPException(404, "order not found")
+        history = svc().store.audit_for("order", o["order_number"], 100)
+        edits = [h for h in history if h["action"] in ("order.edit", "order.status")]
+        return {"order": _full_order(o), "history": history, "last_modified": edits[0] if edits else None}
+
+    @router.patch("/orders/{order_number}")
+    def edit_order(order_number: str, body: OrderEditIn, admin: dict = Depends(current_admin)) -> dict[str, Any]:
         orders = svc().orders
         o = orders.get(order_number)
         if not o:
             raise HTTPException(404, "order not found")
-        old = (o.get("notes") or "").strip()
-        note = f"[{admin['name']}] statut → {body.status}"
-        orders.update(o["order_number"], status=body.status, notes=f"{old} | {note}" if old else note)
-        return {"order_number": o["order_number"], "status": body.status}
+        changes: dict[str, Any] = {}
+        for field in EDITABLE_FIELDS:
+            value = getattr(body, field)
+            if value is None:
+                continue
+            if field == "phone":
+                value = normalize_phone(value)
+                if not value:
+                    raise HTTPException(422, "numéro de téléphone invalide")
+            elif isinstance(value, str):
+                value = value.strip() if field == "internal_note" else " ".join(value.split())
+            if str(value) != str(o.get(field, "") or ""):
+                changes[field] = value
+        if "quantity" in changes:
+            changes["total"] = order_total(changes["quantity"])
+        if not changes:
+            return {"order": _full_order(o), "changed": []}
+        orders.update(o["order_number"], **changes)
+        for field, value in changes.items():
+            if field != "total":
+                _audit(admin, "order.edit", "order", o["order_number"], f"{field}: {o.get(field, '') or ''} → {value}")
+        return {"order": _full_order(orders.get(o["order_number"])), "changed": [k for k in changes if k != "total"]}
 
     return router
