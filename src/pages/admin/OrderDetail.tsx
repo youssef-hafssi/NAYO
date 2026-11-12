@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useState, type FormEvent } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { ArrowLeft, MessageSquare } from 'lucide-react'
-import { adminApi, Unauthorized, type AuditEntry, type FullOrder, type OrderEdit, type SettableStatus } from '../../lib/adminApi'
+import { adminApi, Unauthorized, type AuditEntry, type FullOrder, type OrderEdit, type SettableStatus, type StockMovement } from '../../lib/adminApi'
 import { useAuth } from './AdminApp'
-import { BusyButton, Chip, FieldLabel, fmtDateTime, formatPhone, inputClass, StatusPill } from './ui'
+import { BusyButton, Chip, FieldLabel, fmtDateTime, fmtMoney, formatPhone, inputClass, StatusPill, STOCK_REASON, withStockConfirm } from './ui'
 
 /* Order detail: every editable field (each change audited), status changes, history. */
 
@@ -52,6 +52,8 @@ export default function OrderDetail() {
   const [statusBusy, setStatusBusy] = useState<string | null>(null)
   const [returning, setReturning] = useState(false)
   const [returnReason, setReturnReason] = useState('')
+  const [recoverable, setRecoverable] = useState(true)
+  const [moves, setMoves] = useState<StockMovement[]>([])
   const [message, setMessage] = useState<{ kind: 'ok' | 'error'; text: string } | null>(null)
   const [notFound, setNotFound] = useState(false)
 
@@ -70,6 +72,7 @@ export default function OrderDetail() {
       setForm(toForm(r.order))
       setHistory(r.history)
       setLastModified(r.last_modified)
+      setMoves(r.stock_movements ?? [])
     } catch (e) {
       if (e instanceof Error && /not found|404/.test(e.message)) setNotFound(true)
       else fail(e)
@@ -118,7 +121,11 @@ export default function OrderDetail() {
     setSaving(true)
     setMessage(null)
     try {
-      const r = await adminApi.editOrder(order.order_number, edit)
+      let r: Awaited<ReturnType<typeof adminApi.editOrder>> | undefined
+      const done = await withStockConfirm(async (force) => {
+        r = await adminApi.editOrder(order.order_number, force ? { ...edit, force } : edit)
+      })
+      if (!done || !r) return
       setMessage({ kind: 'ok', text: `Enregistré : ${r.changed.map((c) => FIELD_LABEL[c] ?? c).join(', ')}` })
       await load()
     } catch (err) {
@@ -137,8 +144,15 @@ export default function OrderDetail() {
     setStatusBusy(status)
     setMessage(null)
     try {
-      await adminApi.setStatus(order.order_number, status, status === 'returned' ? { return_reason: reason } : undefined)
+      const done = await withStockConfirm((force) =>
+        adminApi.setStatus(order.order_number, status, {
+          ...(status === 'returned' ? { return_reason: reason, recoverable } : {}),
+          ...(force ? { force } : {}),
+        }),
+      )
+      if (!done) return
       setReturning(false)
+      setRecoverable(true)
       setReturnReason('')
       await load()
     } catch (err) {
@@ -206,6 +220,10 @@ export default function OrderDetail() {
           <div className="mt-12 r-10 border border-[#f0d4d4] bg-[#fdf6f6] p-12">
             <FieldLabel htmlFor="ret">Raison du retour (refus, absent, injoignable…)</FieldLabel>
             <input id="ret" value={returnReason} onChange={(e) => setReturnReason(e.target.value)} maxLength={300} className={inputClass} />
+            <label className="mt-10 flex min-h-40 items-center gap-10 fs-14">
+              <input type="checkbox" checked={recoverable} onChange={(e) => setRecoverable(e.target.checked)} className="size-18 accent-[#3a0a10]" />
+              Produit récupérable (il revient dans le stock)
+            </label>
             <div className="mt-10 flex gap-8">
               <BusyButton busy={statusBusy === 'returned'} onClick={() => changeStatus('returned', returnReason.trim())}>
                 Marquer retournée
@@ -253,6 +271,25 @@ export default function OrderDetail() {
       </form>
 
       {/* History */}
+      {moves.length > 0 && (
+        <section className="mt-28">
+          <FieldLabel>Mouvements de stock</FieldLabel>
+          <ul className="mt-8 divide-y divide-[#efe7e3] r-10 border border-[#efe7e3]">
+            {moves.map((m) => (
+              <li key={m.id} className="flex flex-wrap items-center gap-x-12 gap-y-2 px-12 py-10 fs-13">
+                <span className="text-[#8a8a8a]">{fmtDateTime(m.at)}</span>
+                <span className="font-semibold">{STOCK_REASON[m.reason] ?? m.reason}</span>
+                <span className={m.delta < 0 ? 'text-[#a12a2a]' : 'text-[#17703c]'}>
+                  {m.written_off ? `${m.written_off} perdue(s)` : `${m.delta > 0 ? '+' : ''}${m.delta}`}
+                </span>
+                {m.unit_cost_cents !== undefined && <span className="text-[#7a6f6f]">à {fmtMoney(m.unit_cost_cents)}</span>}
+                <span className="ml-auto text-[#7a6f6f]">stock : {m.balance_after}</span>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
+
       <section className="mt-28">
         <FieldLabel>Historique</FieldLabel>
         {history.length === 0 ? (

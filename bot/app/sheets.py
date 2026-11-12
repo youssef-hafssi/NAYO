@@ -35,7 +35,7 @@ CONFIRMED_LIKE = ("confirmed", "shipped", "delivered")  # the order is "on": uni
 CLOSED_LIKE = ("cancelled", "returned")
 
 # Extra order fields kept in the database only (the Google Sheet keeps exactly the 12 HEADERS).
-EXTRA_COLUMNS = ["carrier", "tracking", "delivered_at", "return_reason", "source", "internal_note"]
+EXTRA_COLUMNS = ["carrier", "tracking", "delivered_at", "return_reason", "source", "internal_note", "shipped_at"]
 ALL_COLUMNS = HEADERS + EXTRA_COLUMNS
 
 
@@ -242,6 +242,15 @@ class DbOrders:
         self.store._exec(
             f"UPDATE orders SET {sets} WHERE UPPER(order_number) = UPPER(?)", (*[str(v) for v in fields.values()], order_number)
         )
+
+    def units_in(self, statuses: tuple[str, ...]) -> list[tuple[str, int]]:
+        """(order_number, quantity) of every order in these statuses — used to backfill the stock ledger."""
+        marks = ", ".join("?" for _ in statuses)
+        rows = self.store._exec(
+            f"SELECT order_number, CAST(quantity AS INTEGER) FROM orders WHERE status IN ({marks}) AND quantity <> ''",
+            tuple(statuses), fetch="all",
+        )
+        return [(r[0], int(r[1] or 0)) for r in rows]
 
 
 class MirroredOrders:

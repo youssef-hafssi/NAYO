@@ -53,6 +53,7 @@ SCHEMA = [
     )""",
     "CREATE INDEX IF NOT EXISTS audit_entity ON audit_log (entity, entity_id, at)",
     "CREATE INDEX IF NOT EXISTS audit_at ON audit_log (at)",
+    "CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL)",
     """CREATE TABLE IF NOT EXISTS admin_users (
         id TEXT PRIMARY KEY,
         email TEXT NOT NULL UNIQUE,
@@ -72,12 +73,27 @@ MIGRATIONS = [
 ]
 
 RLS_TABLES = ("counters", "processed_messages", "messages", "conversations", "rate_events", "order_requests",
-              "order_aliases", "admin_users", "audit_log")
+              "order_aliases", "admin_users", "audit_log", "settings")
 
 CONV_FIELDS = {"last_client_at", "order_number", "stage", "failed_attempts", "verified_order", "lang",
                "taken_over_by", "admin_read_at", "internal_notes"}
 CONV_COLUMNS = ("phone, last_client_at, order_number, stage, failed_attempts, verified_order, lang, taken_over_by, "
                 "admin_read_at, internal_notes")
+
+
+class Tx:
+    """Statements inside Store.tx() — same `?` placeholders as Store._exec."""
+
+    def __init__(self, store: "Store", cur: Any):
+        self.store, self.cur = store, cur
+
+    def exec(self, sql: str, params: tuple = (), fetch: str | None = None) -> Any:
+        self.cur.execute(self.store._sql(sql), params)
+        if fetch == "one":
+            return self.cur.fetchone()
+        if fetch == "all":
+            return self.cur.fetchall()
+        return None
 
 
 @dataclass
@@ -140,6 +156,42 @@ class Store:
 
     def _sql(self, sql: str) -> str:
         return sql.replace("?", "%s") if self.backend == "postgres" else sql
+
+    @property
+    def serial_pk(self) -> str:
+        """Auto-increment primary key DDL for the current backend (ids are returned with RETURNING id)."""
+        return "BIGSERIAL PRIMARY KEY" if self.backend == "postgres" else "INTEGER PRIMARY KEY AUTOINCREMENT"
+
+    @contextmanager
+    def tx(self, lock: str = "") -> Iterator["Tx"]:
+        """One transaction on one connection. `lock` serializes writers sharing that name (Postgres advisory
+        lock held until commit; SQLite: BEGIN IMMEDIATE takes the database write lock). Rolls back on error."""
+        with self._conn() as conn:
+            if self.backend == "postgres":
+                with conn.transaction():
+                    cur = conn.cursor()
+                    if lock:
+                        cur.execute("SELECT pg_advisory_xact_lock(hashtext(%s))", (lock,))
+                    yield Tx(self, cur)
+            else:
+                conn.execute("BEGIN IMMEDIATE")
+                try:
+                    yield Tx(self, conn.cursor())
+                    conn.execute("COMMIT")
+                except BaseException:
+                    conn.execute("ROLLBACK")
+                    raise
+
+    # -- settings (key/value) ----------------------------------------------------------------
+    def get_setting(self, key: str, default: str = "") -> str:
+        row = self._exec("SELECT value FROM settings WHERE key = ?", (key,), fetch="one")
+        return row[0] if row else default
+
+    def set_setting(self, key: str, value: str) -> None:
+        self._exec(
+            "INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT (key) DO UPDATE SET value = excluded.value",
+            (key, str(value)),
+        )
 
     def _exec(self, sql: str, params: tuple = (), fetch: str | None = None) -> Any:
         with self._conn() as conn:

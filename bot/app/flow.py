@@ -13,6 +13,7 @@ from typing import Any, Callable
 
 from .ai import AI, AIError, AIResult
 from .orders import create_bot_order
+from .stock import InsufficientStock
 from .phone import normalize_phone
 from .pricing import MAX_QTY, SHIPPING, UNIT_PRICE, order_total
 from .sheets import CLOSED_LIKE, CONFIRMED_LIKE, OPEN_STATUSES, OrdersRepo
@@ -45,6 +46,9 @@ PENDING_QUESTIONS = {
                "number in quantity.",
     "same_addr": "We asked whether to deliver to the same address as the previous order: yes -> confirm; a different "
                  "address -> provide_details; no -> other.",
+    "stock_limit": "We told the client that only the number of units after the colon is left in stock and asked "
+                   "if they want that many: yes -> confirm (quantity null); another number -> change_quantity; "
+                   "no / doesn't want -> cancel.",
 }
 ALERT_EVERY_S = 3600  # at most one owner alert per order per hour
 
@@ -334,7 +338,8 @@ class Bot:
             return
 
         if r.intent == "confirm" and conv.stage == "await_yes" and not changed and order.get("city") and order.get("address"):
-            self.orders.update(order["order_number"], status="confirmed")
+            if not self._confirm_with_stock(phone, order, conv, lang, text):
+                return
             self.store.update_conv(phone, stage="")
             q = _int(order.get("quantity"), 1)
             self._send(phone, t("confirmed", lang, first=first_name(order["name"]), total=order_total(q)))
@@ -385,6 +390,19 @@ class Bot:
                 return r
             self._send(phone, r.reply if r.intent == "question" else t("ask_quantity", lang))
             return None
+
+        if kind == "stock_limit":  # "il ne reste que N, vous les voulez ?"
+            left = max(1, _int(arg, 1))
+            if r.intent == "confirm" and r.quantity is None:
+                self._set_stage(phone, conv, "")
+                self._set_quantity(order, left)
+                self._advance(phone, order, conv, lang, prefix=[], greet=False)  # recap with N, waits for "yes"
+                return None
+            if r.intent == "question":
+                self._send(phone, r.reply)
+                return None
+            self._set_stage(phone, conv, "await_yes" if r.intent == "change_quantity" else "")
+            return r
 
         if kind == "same_addr":  # we proposed the previous order's address
             if r.intent == "confirm" and not (r.city or r.address):
@@ -526,6 +544,36 @@ class Bot:
         self.orders.update(number, notes=f"{notes} | {note}" if notes else note)
         order["notes"] = f"{notes} | {note}" if notes else note
         self._throttled_alert(phone, number, text, reason, always=always)
+
+    # ------------------------------------------------------------------ stock
+    def _confirm_with_stock(self, phone: str, order: dict, conv: Conversation, lang: str, text: str) -> bool:
+        """Confirms the order unless the stock can't cover it (checked inside the stock lock: no oversell)."""
+        stock = getattr(self.orders, "stock", None)
+        number = order["order_number"]
+        if stock is None:
+            self.orders.update(number, status="confirmed")
+            return True
+        try:
+            self.orders.update(number, status="confirmed", stock_check=True)
+        except InsufficientStock as e:
+            available = e.available
+            if available > 0:
+                self._set_stage(phone, conv, f"stock_limit:{available}")
+                self._send(phone, t("stock_limit", lang, n=available))
+            else:
+                self._send(phone, t("out_of_stock", lang))  # order stays awaiting_details
+            self._throttled_alert(phone, number, text, f"stock insuffisant (reste {available})")
+            return False
+        on_hand = stock.available()
+        if on_hand is not None and on_hand <= stock.threshold():
+            self._stock_alert(f"⚠️ Stock bas : il reste {on_hand} NAYO (seuil {stock.threshold()}).")
+        return True
+
+    def _stock_alert(self, body: str) -> None:
+        if self.store.count("alert:stock", ALERT_EVERY_S, self.clock()) > 0:
+            return
+        self.store.hit("alert:stock", self.clock())
+        self._alert_owner(body)
 
     def _throttled_alert(self, phone: str, number: str, text: str, reason: str, always: bool = False) -> None:
         """At most one alert per order per hour — except changes to a confirmed order, which always alert."""

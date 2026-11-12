@@ -14,6 +14,18 @@ T: dict[str, dict[str, str]] = {
         "darija": "Salam 😊 3afak sift lina numéro dyal la commande (bhal NAYO-1043), kayn f la page dyal la confirmation.",
         "ar": "السلام 😊 عافاك صيفط لينا رقم الطلب (بحال NAYO-1043)، كاين فصفحة التأكيد.",
     },
+    "stock_limit": {
+        "fr": "Désolé, il ne nous reste que {n} NAYO en stock 🙏 Voulez-vous en commander {n} ?",
+        "darija": "Smhlina, ma b9a lina ghir {n} NAYO f stock 🙏 Bghiti tchd {n}?",
+        "ar": "سمحلينا، ما بقا لينا غير {n} NAYO فالستوك 🙏 بغيتي تاخد {n}؟",
+        "en": "Sorry, we only have {n} NAYO left in stock 🙏 Would you like {n}?",
+    },
+    "out_of_stock": {
+        "fr": "Désolé, NAYO est en rupture de stock pour le moment 🙏 Votre commande est gardée : nous revenons vers vous dès le réassort.",
+        "darija": "Smhlina, NAYO salat f stock daba 🙏 La commande dyalk mhfoda, ghadi nrj3o lik mlli ywsl stock jdid.",
+        "ar": "سمحلينا، NAYO سالات فالستوك دابا 🙏 الطلب ديالك محفوظ، غادي نرجعو ليك ملي يوصل ستوك جديد.",
+        "en": "Sorry, NAYO is out of stock right now 🙏 Your order is kept: we'll get back to you as soon as it's restocked.",
+    },
     "new_or_add": {
         "fr": "Nouvelle commande, ou ajouter à la commande {number} ?",
         "darija": "Bghiti commande jdida, wla nzidoha f la commande {number}?",

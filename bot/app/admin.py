@@ -24,6 +24,7 @@ from .flow import WINDOW_S
 from .phone import normalize_phone
 from .pricing import MAX_QTY, SHIPPING, UNIT_PRICE, order_total
 from .sheets import EXTRA_COLUMNS, STATUSES, now_local
+from .stock import InsufficientStock
 
 log = logging.getLogger("nayo.admin")
 
@@ -100,6 +101,8 @@ class SendIn(BaseModel):
 class StatusIn(BaseModel):
     status: str = Field(max_length=30)
     return_reason: str | None = Field(default=None, max_length=300)
+    force: bool = False  # confirm even beyond the stock ("Confirmer quand même ?")
+    recoverable: bool = True  # returned: the product goes back to stock (untick = written off)
 
 
 class OrderEditIn(BaseModel):
@@ -114,6 +117,7 @@ class OrderEditIn(BaseModel):
     carrier: str | None = Field(default=None, max_length=60)
     tracking: str | None = Field(default=None, max_length=80)
     internal_note: str | None = Field(default=None, max_length=2000)
+    force: bool = False  # quantity increase on a confirmed order beyond the stock
 
 
 class PasswordIn(BaseModel):
@@ -308,9 +312,23 @@ def build_admin_router(svc: Callable[[], Any], settings: Any) -> APIRouter:
         o = svc().orders.get(order_number)
         if not o:
             raise HTTPException(404, "order not found")
-        return apply_status(o, body.status, admin, return_reason=body.return_reason)
+        return apply_status(o, body.status, admin, return_reason=body.return_reason, force=body.force,
+                            recoverable=body.recoverable)
 
-    def apply_status(o: dict[str, Any], status: str, admin: dict, *, return_reason: str | None = None) -> dict[str, Any]:
+    def _update_order(number: str, admin: dict, *, force: bool = False, recoverable: bool = True, **fields: Any) -> None:
+        """orders.update with the stock rules (409 'Stock insuffisant : il reste N' unless force)."""
+        orders = svc().orders
+        extra = ({"stock_check": not force, "recoverable": recoverable, "stock_admin": admin["name"]}
+                 if getattr(orders, "stock", None) is not None else {})
+        try:
+            orders.update(number, **fields, **extra)
+        except InsufficientStock as e:
+            raise HTTPException(409, str(e))
+
+    router.update_order = _update_order  # type: ignore[attr-defined]
+
+    def apply_status(o: dict[str, Any], status: str, admin: dict, *, return_reason: str | None = None,
+                     force: bool = False, recoverable: bool = True) -> dict[str, Any]:
         """The single admin path for a status change (Sheet mirror and stock follow through orders.update)."""
         old_status = o.get("status", "")
         old = (o.get("notes") or "").strip()
@@ -318,12 +336,16 @@ def build_admin_router(svc: Callable[[], Any], settings: Any) -> APIRouter:
         fields: dict[str, Any] = {"status": status, "notes": f"{old} | {note}" if old else note}
         if status == "delivered":
             fields["delivered_at"] = now_local()
+        if status == "shipped":
+            fields["shipped_at"] = now_local()
         reason = (return_reason or "").strip()
         if status == "returned" and reason:
             fields["return_reason"] = reason
-        svc().orders.update(o["order_number"], **fields)
+        _update_order(o["order_number"], admin, force=force, recoverable=recoverable, **fields)
         _audit(admin, "order.status", "order", o["order_number"],
-               f"{old_status} → {status}" + (f" ({reason})" if status == "returned" and reason else ""))
+               f"{old_status} → {status}" + (f" ({reason})" if status == "returned" and reason else "")
+               + (" — produit non récupérable" if status == "returned" and not recoverable else "")
+               + (" — forcé malgré le stock" if force else ""))
         return {"order_number": o["order_number"], "status": status}
 
     router.apply_status = apply_status  # type: ignore[attr-defined]
@@ -342,7 +364,12 @@ def build_admin_router(svc: Callable[[], Any], settings: Any) -> APIRouter:
             raise HTTPException(404, "order not found")
         history = svc().store.audit_for("order", o["order_number"], 100)
         edits = [h for h in history if h["action"] in ("order.edit", "order.status")]
-        return {"order": _full_order(o), "history": history, "last_modified": edits[0] if edits else None}
+        stock = getattr(svc().orders, "stock", None)
+        moves = stock.order_movements(o["order_number"]) if stock is not None else []
+        if admin.get("role") != "owner":
+            moves = [{k: v for k, v in m.items() if "cost" not in k} for m in moves]
+        return {"order": _full_order(o), "history": history, "last_modified": edits[0] if edits else None,
+                "stock_movements": moves}
 
     @router.patch("/orders/{order_number}")
     def edit_order(order_number: str, body: OrderEditIn, admin: dict = Depends(current_admin)) -> dict[str, Any]:
@@ -367,10 +394,13 @@ def build_admin_router(svc: Callable[[], Any], settings: Any) -> APIRouter:
             changes["total"] = order_total(changes["quantity"])
         if not changes:
             return {"order": _full_order(o), "changed": []}
-        orders.update(o["order_number"], **changes)
+        _update_order(o["order_number"], admin, force=body.force, **changes)
         for field, value in changes.items():
             if field != "total":
                 _audit(admin, "order.edit", "order", o["order_number"], f"{field}: {o.get(field, '') or ''} → {value}")
         return {"order": _full_order(orders.get(o["order_number"])), "changed": [k for k in changes if k != "total"]}
 
+    from .admin_stock import add_stock_routes
+
+    add_stock_routes(router, svc, current_admin, owner_only, _audit)
     return router

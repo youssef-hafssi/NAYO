@@ -50,6 +50,9 @@ def build_services(settings: Settings) -> Services:
         orders = DbOrders(store)
     else:
         orders = SheetOrders(settings.google_sheet_id, settings.google_service_account_json, settings.orders_tab)
+    from .stock import Stock, StockOrders
+
+    orders = StockOrders(orders, Stock(store))  # every status/quantity change keeps the stock in line
     if settings.sheet_webhook_url:
         orders = MirroredOrders(orders, settings.sheet_webhook_url, settings.sheet_webhook_secret)
     wa = WhatsAppClient(settings.whatsapp_token, settings.whatsapp_phone_number_id, settings.graph_api_version)

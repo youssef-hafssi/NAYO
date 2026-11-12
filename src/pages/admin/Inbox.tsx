@@ -10,7 +10,7 @@ import {
   type Status,
   type Thread,
 } from '../../lib/adminApi'
-import { Chip, FILTERS, formatPhone, hhmm, listTime, POLL_MS, StatusPill, WINE, windowLeft } from './ui'
+import { Chip, FILTERS, formatPhone, hhmm, listTime, POLL_MS, StatusPill, WINE, windowLeft, withStockConfirm } from './ui'
 
 /*
  * Admin inbox (/admin/inbox) — approved mockup: header, conversation list with filter chips, chat thread with
@@ -316,7 +316,8 @@ export default function Inbox({ onLogout }: { onLogout: () => void }) {
 
   const setStatus = async (s: 'confirmed' | 'cancelled' | 'needs_human') => {
     if (!order) return
-    await guard(adminApi.setStatus(order.order_number, s))
+    const n = order.order_number
+    await guard(withStockConfirm((force) => adminApi.setStatus(n, s, force ? { force } : undefined)))
     if (selected) loadThread(selected)
     loadList()
   }

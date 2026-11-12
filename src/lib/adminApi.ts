@@ -6,6 +6,12 @@
 const BASE = '/bot-api/admin'
 
 export class Unauthorized extends Error {}
+/** Any non-2xx answer: `status` lets the UI react to 409 (stock) or 403 (owner only). */
+export class ApiError extends Error {
+  constructor(message: string, readonly status: number) {
+    super(message)
+  }
+}
 
 export type Status =
   | 'new'
@@ -60,6 +66,34 @@ export type FullOrder = Order & {
   notes: string
   updated_at: string
   whatsapp_from: string
+  shipped_at: string
+}
+
+export type StockMovement = {
+  id: number
+  at: string
+  delta: number
+  reason: string
+  order_number: string | null
+  admin_name: string | null
+  note: string
+  balance_after: number
+  written_off: number
+  unit_cost_cents?: number // owner only
+  avg_cost_cents_after?: number // owner only
+}
+
+export type StockSummary = {
+  tracking: boolean
+  ledger_start: string | null
+  on_hand: number
+  low_threshold: number
+  low: boolean
+  out: boolean
+  sold_14d: number
+  days_of_stock: number | null
+  avg_cost_cents?: number // owner only
+  stock_value_cents?: number // owner only
 }
 export type AuditEntry = { at: number; admin_name: string; action: string; details: string }
 export type OrderEdit = Partial<{
@@ -94,7 +128,7 @@ async function call<T>(path: string, init?: { method?: string; body?: unknown })
   })
   if (res.status === 401 && path !== '/login') throw new Unauthorized()
   const data = await res.json().catch(() => ({}))
-  if (!res.ok) throw new Error((data as { detail?: string }).detail || `Erreur ${res.status}`)
+  if (!res.ok) throw new ApiError((data as { detail?: string }).detail || `Erreur ${res.status}`, res.status)
   return data as T
 }
 
@@ -106,8 +140,10 @@ export const adminApi = {
   changePassword: (current: string, next: string) =>
     call('/me/password', { method: 'POST', body: { current, new: next } }),
   getOrder: (n: string) =>
-    call<{ order: FullOrder; history: AuditEntry[]; last_modified: AuditEntry | null }>(`/orders/${encodeURIComponent(n)}`),
-  editOrder: (n: string, edit: OrderEdit) =>
+    call<{ order: FullOrder; history: AuditEntry[]; last_modified: AuditEntry | null; stock_movements: StockMovement[] }>(
+      `/orders/${encodeURIComponent(n)}`,
+    ),
+  editOrder: (n: string, edit: OrderEdit & { force?: boolean }) =>
     call<{ order: FullOrder; changed: string[] }>(`/orders/${encodeURIComponent(n)}`, { method: 'PATCH', body: edit }),
   conversations: (filter: Filter) =>
     call<{ items: ConversationItem[]; online: number }>(`/conversations?filter=${filter}`),
@@ -116,6 +152,19 @@ export const adminApi = {
   takeover: (phone: string) => call(`/conversations/${phone}/takeover`, { method: 'POST' }),
   release: (phone: string) => call(`/conversations/${phone}/release`, { method: 'POST' }),
   notes: (phone: string, notes: string) => call(`/conversations/${phone}/notes`, { method: 'POST', body: { notes } }),
-  setStatus: (orderNumber: string, status: SettableStatus, extra?: { return_reason?: string }) =>
-    call(`/order/${encodeURIComponent(orderNumber)}/status`, { method: 'POST', body: { status, ...extra } }),
+  setStatus: (
+    orderNumber: string,
+    status: SettableStatus,
+    extra?: { return_reason?: string; force?: boolean; recoverable?: boolean },
+  ) => call(`/order/${encodeURIComponent(orderNumber)}/status`, { method: 'POST', body: { status, ...extra } }),
+  stock: () => call<StockSummary>('/stock'),
+  stockMovements: (cursor?: number | null) =>
+    call<{ items: StockMovement[]; next_cursor: number | null }>(`/stock/movements?limit=50${cursor ? `&cursor=${cursor}` : ''}`),
+  stockOpening: (quantity: number, unit_cost: number) =>
+    call<StockSummary>('/stock/opening', { method: 'POST', body: { quantity, unit_cost } }),
+  stockRestock: (quantity: number, unit_cost: number, note: string) =>
+    call<StockSummary>('/stock/restock', { method: 'POST', body: { quantity, unit_cost, note } }),
+  stockAdjust: (new_quantity: number, note: string) =>
+    call<StockSummary>('/stock/adjust', { method: 'POST', body: { new_quantity, note } }),
+  stockThreshold: (value: number) => call<StockSummary>('/stock/threshold', { method: 'POST', body: { value } }),
 }

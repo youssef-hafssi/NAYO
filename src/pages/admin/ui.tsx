@@ -120,3 +120,35 @@ export const fmtDateTime = (s: string | number) => {
     ? String(s)
     : d.toLocaleString('fr-FR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })
 }
+
+/** 123450 → "1 234,50 MAD" */
+export const fmtMoney = (cents: number) =>
+  `${(cents / 100).toLocaleString('fr-FR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} MAD`
+
+export const STOCK_REASON: Record<string, string> = {
+  opening: "Stock d'ouverture",
+  purchase: 'Réception fournisseur',
+  restock_manual: 'Réapprovisionnement',
+  adjustment: 'Correction',
+  order_confirmed: 'Commande confirmée',
+  order_changed: 'Commande modifiée',
+  order_cancelled: 'Commande annulée',
+  order_returned: 'Commande retournée',
+}
+
+/**
+ * Runs an admin write; on "409 Stock insuffisant" asks "Confirmer quand même ?" and re-runs it with force.
+ * Returns false if the user declined.
+ */
+export async function withStockConfirm(run: (force: boolean) => Promise<unknown>): Promise<boolean> {
+  try {
+    await run(false)
+    return true
+  } catch (e) {
+    const err = e as { status?: number; message?: string }
+    if (err.status !== 409 || !/stock/i.test(err.message ?? '')) throw e
+    if (!window.confirm(`${err.message}. Confirmer quand même ?`)) return false
+    await run(true)
+    return true
+  }
+}
