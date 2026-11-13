@@ -1,5 +1,5 @@
 import { NavLink, Outlet } from 'react-router-dom'
-import { MessageSquare, MoreHorizontal, Package, ShoppingCart, type LucideIcon } from 'lucide-react'
+import { MessageSquare, MoreHorizontal, Package, ShoppingCart, Truck, type LucideIcon } from 'lucide-react'
 import { useAuth } from './AdminApp'
 import { WINE } from './ui'
 
@@ -12,6 +12,7 @@ type NavItem = { to: string; label: string; icon: LucideIcon; ownerOnly?: boolea
 
 export const NAV: NavItem[] = [
   { to: '/admin/inbox', label: 'Inbox', icon: MessageSquare },
+  { to: '/admin/delivery', label: 'Livraisons', icon: Truck },
   { to: '/admin/stock', label: 'Stock', icon: Package },
   { to: '/admin/purchasing', label: 'Achats', icon: ShoppingCart, ownerOnly: true },
   { to: '/admin/plus', label: 'Plus', icon: MoreHorizontal },

@@ -67,6 +67,11 @@ export type FullOrder = Order & {
   updated_at: string
   whatsapp_from: string
   shipped_at: string
+  carrier_id: string
+  cod_status: string
+  carrier_fee_cents?: string // owner only
+  cod_amount_cents?: string // owner only
+  remittance_id?: string // owner only
 }
 
 export type StockMovement = {
@@ -82,6 +87,73 @@ export type StockMovement = {
   unit_cost_cents?: number // owner only
   avg_cost_cents_after?: number // owner only
 }
+
+export type Carrier = {
+  id: number
+  name: string
+  phone: string
+  active: boolean
+  fee_delivered_cents?: number // owner only
+  fee_returned_cents?: number // owner only
+  remit_delay_days?: number // owner only
+}
+export type BoardStatus = 'confirmed' | 'shipped' | 'delivered' | 'returned'
+export type BoardOrder = {
+  order_number: string
+  created_at: string
+  name: string
+  phone: string
+  city: string
+  address: string
+  quantity: string
+  total: string
+  status: Status
+  carrier_id: string
+  carrier: string
+  tracking: string
+  shipped_at: string
+  delivered_at: string
+  return_reason: string
+  cod_status: string
+  carrier_fee_cents?: string
+}
+export type Slip = { order_number: string; name: string; phone: string; city: string; address: string; quantity: string; total: string; carrier: string; tracking: string }
+export type CodCarrier = {
+  carrier_id: number
+  name: string
+  orders: number
+  expected_cents: number
+  oldest_delivered_at: string | null
+  oldest_age_days: number | null
+  late: boolean
+}
+export type CodPending = { order_number: string; name: string; city: string; delivered_at: string; total_cents: number; fee_cents: number; net_cents: number; late: boolean }
+export type Remittance = {
+  id: number
+  carrier_id: number
+  carrier_name: string
+  at: string
+  amount_received_cents: number
+  expected_cents: number
+  difference_cents: number
+  orders: number
+  note: string
+  admin_name: string
+}
+export type ReturnRow = {
+  order_number: string
+  name: string
+  city: string
+  quantity: number
+  total: number
+  return_reason: string
+  at: string
+  carrier: string
+  fee_cents: number
+  written_off_cents: number
+  loss_cents: number
+}
+export type CarrierInput = { name: string; phone?: string; fee_delivered?: number; fee_returned?: number; remit_delay_days?: number; active?: boolean }
 
 export type Supplier = { id: number; name: string; phone: string; city: string; note: string; active: boolean; created_at: string }
 export type POStatus = 'draft' | 'ordered' | 'partially_received' | 'received' | 'cancelled'
@@ -183,7 +255,7 @@ export const adminApi = {
     call<{ order: FullOrder; history: AuditEntry[]; last_modified: AuditEntry | null; stock_movements: StockMovement[] }>(
       `/orders/${encodeURIComponent(n)}`,
     ),
-  editOrder: (n: string, edit: OrderEdit & { force?: boolean }) =>
+  editOrder: (n: string, edit: OrderEdit & { force?: boolean; carrier_id?: number; carrier_fee?: number }) =>
     call<{ order: FullOrder; changed: string[] }>(`/orders/${encodeURIComponent(n)}`, { method: 'PATCH', body: edit }),
   conversations: (filter: Filter) =>
     call<{ items: ConversationItem[]; online: number }>(`/conversations?filter=${filter}`),
@@ -206,6 +278,26 @@ export const adminApi = {
     call<StockSummary>('/stock/restock', { method: 'POST', body: { quantity, unit_cost, note } }),
   stockAdjust: (new_quantity: number, note: string) =>
     call<StockSummary>('/stock/adjust', { method: 'POST', body: { new_quantity, note } }),
+  carriers: (includeInactive = false) => call<{ items: Carrier[] }>(`/carriers${includeInactive ? '?include_inactive=true' : ''}`),
+  createCarrier: (b: CarrierInput) => call<Carrier>('/carriers', { method: 'POST', body: b }),
+  editCarrier: (id: number, b: Partial<CarrierInput>) => call<Carrier>(`/carriers/${id}`, { method: 'PATCH', body: b }),
+  board: (status: BoardStatus, offset = 0, carrierId?: number) =>
+    call<{ items: BoardOrder[]; has_more: boolean; counts: Record<string, number> }>(
+      `/delivery?status=${status}&limit=50&offset=${offset}${carrierId !== undefined ? `&carrier_id=${carrierId}` : ''}`,
+    ),
+  bulkDelivery: (b: { order_numbers: string[]; carrier_id?: number; status?: 'shipped' | 'delivered' | 'returned'; return_reason?: string; recoverable?: boolean }) =>
+    call<{ done: string[]; errors: Record<string, string> }>('/delivery/bulk', { method: 'POST', body: b }),
+  slips: (numbers: string[]) =>
+    call<{ items: Slip[]; company: { name: string; address: string; phone: string } }>(`/delivery/slips?numbers=${encodeURIComponent(numbers.join(','))}`),
+  codSummary: () => call<{ carriers: CodCarrier[]; total_cents: number; late_carriers: number }>('/cod/summary'),
+  codPending: (carrierId: number) => call<{ items: CodPending[] }>(`/cod/pending?carrier_id=${carrierId}`),
+  remit: (b: { carrier_id: number; order_numbers: string[]; amount_received: number; note?: string }) =>
+    call<{ id: number; expected_cents: number; amount_received_cents: number; difference_cents: number; orders: number }>('/remittances', {
+      method: 'POST',
+      body: b,
+    }),
+  remittances: (offset = 0) => call<{ items: Remittance[]; has_more: boolean }>(`/remittances?limit=50&offset=${offset}`),
+  returns: (offset = 0) => call<{ items: ReturnRow[]; has_more: boolean }>(`/returns?limit=50&offset=${offset}`),
   suppliers: (includeInactive = false) =>
     call<{ items: Supplier[] }>(`/suppliers${includeInactive ? '?include_inactive=true' : ''}`),
   createSupplier: (b: { name: string; phone?: string; city?: string; note?: string }) =>

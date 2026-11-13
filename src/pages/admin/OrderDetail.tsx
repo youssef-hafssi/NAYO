@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useState, type FormEvent } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { ArrowLeft, MessageSquare } from 'lucide-react'
-import { adminApi, Unauthorized, type AuditEntry, type FullOrder, type OrderEdit, type SettableStatus, type StockMovement } from '../../lib/adminApi'
+import { adminApi, Unauthorized, type AuditEntry, type FullOrder, type OrderEdit, type SettableStatus, type StockMovement, type Carrier } from '../../lib/adminApi'
 import { useAuth } from './AdminApp'
-import { BusyButton, Chip, FieldLabel, fmtDateTime, fmtMoney, formatPhone, inputClass, StatusPill, STOCK_REASON, withStockConfirm } from './ui'
+import { BusyButton, Chip, FieldLabel, fmtDateTime, fmtMoney, formatPhone, inputClass, parseMad, Pill, StatusPill, STOCK_REASON, withStockConfirm } from './ui'
 
 /* Order detail: every editable field (each change audited), status changes, history. */
 
@@ -42,7 +42,10 @@ const toForm = (o: FullOrder): Form => ({
 
 export default function OrderDetail() {
   const { number = '' } = useParams()
-  const { logout } = useAuth()
+  const { me, logout } = useAuth()
+  const [carriers, setCarriers] = useState<Carrier[]>([])
+  const [fee, setFee] = useState('')
+  const [deliveryBusy, setDeliveryBusy] = useState(false)
   const navigate = useNavigate()
   const [order, setOrder] = useState<FullOrder | null>(null)
   const [history, setHistory] = useState<AuditEntry[]>([])
@@ -73,11 +76,34 @@ export default function OrderDetail() {
       setHistory(r.history)
       setLastModified(r.last_modified)
       setMoves(r.stock_movements ?? [])
+      setFee(r.order.carrier_fee_cents ? (Number(r.order.carrier_fee_cents) / 100).toString().replace('.', ',') : '')
     } catch (e) {
       if (e instanceof Error && /not found|404/.test(e.message)) setNotFound(true)
       else fail(e)
     }
   }, [number, fail])
+
+  useEffect(() => {
+    adminApi
+      .carriers()
+      .then((c) => setCarriers(c.items))
+      .catch(() => undefined)
+  }, [])
+
+  const saveDelivery = async (edit: { carrier_id?: number; carrier_fee?: number }, ok: string) => {
+    if (deliveryBusy || !order) return
+    setDeliveryBusy(true)
+    setMessage(null)
+    try {
+      await adminApi.editOrder(order.order_number, edit)
+      setMessage({ kind: 'ok', text: ok })
+      await load()
+    } catch (err) {
+      fail(err)
+    } finally {
+      setDeliveryBusy(false)
+    }
+  }
 
   useEffect(() => {
     load()
@@ -240,6 +266,54 @@ export default function OrderDetail() {
         {order.delivered_at && <p className="mt-8 fs-13 text-[#17703c]">Livrée le {fmtDateTime(order.delivered_at)}</p>}
       </section>
 
+      {/* Delivery & cash on delivery */}
+      <section className="mt-18 r-12 border border-[#efe7e3] p-14">
+        <FieldLabel htmlFor="od-carrier">Livreur</FieldLabel>
+        <div className="mt-6 flex flex-wrap items-center gap-10">
+          <select
+            id="od-carrier"
+            value={order.carrier_id || ''}
+            disabled={deliveryBusy || order.cod_status === 'remitted'}
+            onChange={(e) => saveDelivery({ carrier_id: Number(e.target.value || 0) }, 'Livreur enregistré.')}
+            className={`${inputClass} !mt-0 w-auto min-w-180`}
+          >
+            <option value="">— Aucun —</option>
+            {carriers.map((c) => (
+              <option key={c.id} value={c.id}>
+                {c.name}
+              </option>
+            ))}
+            {order.carrier_id && !carriers.some((c) => String(c.id) === order.carrier_id) && (
+              <option value={order.carrier_id}>{order.carrier || 'Livreur désactivé'}</option>
+            )}
+          </select>
+          {order.cod_status === 'with_carrier' && <Pill className="bg-[#fdf0de] text-[#c2650a]">Argent chez le livreur</Pill>}
+          {order.cod_status === 'remitted' && <Pill className="bg-[#dff3e6] text-[#17703c]">Encaissée</Pill>}
+          {order.cod_status === 'none' && <Pill className="bg-[#efefef] text-[#6b6b6b]">Rien à encaisser</Pill>}
+        </div>
+        {me.role === 'owner' && (order.status === 'delivered' || order.status === 'returned') && (
+          <div className="mt-12 flex flex-wrap items-end gap-10">
+            <div className="w-180">
+              <FieldLabel htmlFor="od-fee">Frais du livreur (MAD)</FieldLabel>
+              <input id="od-fee" inputMode="decimal" value={fee} disabled={order.cod_status === 'remitted'} onChange={(e) => setFee(e.target.value)} className={inputClass} />
+            </div>
+            <BusyButton
+              variant="secondary"
+              busy={deliveryBusy}
+              disabled={order.cod_status === 'remitted' || Number.isNaN(parseMad(fee))}
+              onClick={() => saveDelivery({ carrier_fee: parseMad(fee) }, 'Frais enregistrés.')}
+            >
+              Enregistrer
+            </BusyButton>
+            {order.cod_amount_cents && Number(order.cod_amount_cents) > 0 && (
+              <span className="fs-13 text-[#5a4f4f]">
+                À recevoir : {fmtMoney(Number(order.cod_amount_cents) - Number(order.carrier_fee_cents || 0))}
+              </span>
+            )}
+          </div>
+        )}
+      </section>
+
       {/* Editable fields */}
       <form onSubmit={save} className="mt-20 grid gap-14 md:grid-cols-2">
         {field('name')}
@@ -247,7 +321,6 @@ export default function OrderDetail() {
         {field('city')}
         {field('quantity', { inputMode: 'numeric' })}
         <div className="md:col-span-2">{field('address')}</div>
-        {field('carrier')}
         {field('tracking')}
         <div className="md:col-span-2">
           <FieldLabel htmlFor="f-note">Note interne</FieldLabel>

@@ -9,6 +9,8 @@ const OrderDetail = lazy(() => import('./OrderDetail'))
 const Account = lazy(() => import('./Account'))
 const Stock = lazy(() => import('./Stock'))
 const Purchasing = lazy(() => import('./Purchasing'))
+const Delivery = lazy(() => import('./Delivery'))
+const DeliveryPrint = lazy(() => import('./DeliveryPrint'))
 const PurchaseOrderDetail = lazy(() => import('./PurchaseOrderDetail'))
 
 /*
@@ -63,6 +65,14 @@ export default function AdminApp() {
   return (
     <AuthContext.Provider value={{ me, refresh, logout }}>
       <Routes>
+        <Route
+          path="delivery/print"
+          element={
+            <Suspense fallback={null}>
+              <DeliveryPrint />
+            </Suspense>
+          }
+        />
         <Route element={<Layout />}>
           <Route index element={<Navigate to="inbox" replace />} />
           <Route path="inbox" element={<Inbox onLogout={logout} />} />
@@ -79,6 +89,14 @@ export default function AdminApp() {
             element={
               <Suspense fallback={null}>
                 <Stock />
+              </Suspense>
+            }
+          />
+          <Route
+            path="delivery"
+            element={
+              <Suspense fallback={null}>
+                <Delivery />
               </Suspense>
             }
           />

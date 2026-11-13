@@ -25,6 +25,7 @@ from .phone import normalize_phone
 from .pricing import MAX_QTY, SHIPPING, UNIT_PRICE, order_total
 from .sheets import EXTRA_COLUMNS, STATUSES, now_local
 from .stock import InsufficientStock
+from .delivery import Delivery, DeliveryError, cod_fields
 
 log = logging.getLogger("nayo.admin")
 
@@ -115,6 +116,8 @@ class OrderEditIn(BaseModel):
     address: str | None = Field(default=None, max_length=300)
     quantity: int | None = Field(default=None, ge=1, le=MAX_QTY)
     carrier: str | None = Field(default=None, max_length=60)
+    carrier_id: int | None = Field(default=None, ge=0)  # 0 = no carrier
+    carrier_fee: float | None = Field(default=None, ge=0, le=100_000)  # MAD, owner only
     tracking: str | None = Field(default=None, max_length=80)
     internal_note: str | None = Field(default=None, max_length=2000)
     force: bool = False  # quantity increase on a confirmed order beyond the stock
@@ -345,13 +348,28 @@ def build_admin_router(svc: Callable[[], Any], settings: Any) -> APIRouter:
 
     router.update_order = _update_order  # type: ignore[attr-defined]
 
+    _delivery: dict[str, Delivery] = {}
+
+    def delivery() -> Delivery:
+        s = svc()
+        if "d" not in _delivery or _delivery["d"].store is not s.store:
+            _delivery["d"] = Delivery(s.store)
+        return _delivery["d"]
+
+    router.delivery = delivery  # type: ignore[attr-defined]
+
     def apply_status(o: dict[str, Any], status: str, admin: dict, *, return_reason: str | None = None,
                      force: bool = False, recoverable: bool = True) -> dict[str, Any]:
-        """The single admin path for a status change (Sheet mirror and stock follow through orders.update)."""
+        """The single admin path for a status change (Sheet mirror and stock follow through orders.update,
+        cash-on-delivery fields from delivery.cod_fields)."""
         old_status = o.get("status", "")
         old = (o.get("notes") or "").strip()
         note = f"[{admin['name']}] statut → {status}"
         fields: dict[str, Any] = {"status": status, "notes": f"{old} | {note}" if old else note}
+        try:
+            fields.update(cod_fields(o, status, delivery().carrier(o.get("carrier_id")) if o.get("carrier_id") else None))
+        except DeliveryError as e:
+            raise HTTPException(409, str(e))
         if status == "delivered":
             fields["delivered_at"] = now_local()
         if status == "shipped":
@@ -368,11 +386,16 @@ def build_admin_router(svc: Callable[[], Any], settings: Any) -> APIRouter:
 
     router.apply_status = apply_status  # type: ignore[attr-defined]
 
-    def _full_order(o: dict[str, Any]) -> dict[str, Any]:
+    MONEY_ONLY_OWNER = ("carrier_fee_cents", "cod_amount_cents", "remittance_id")
+
+    def _full_order(o: dict[str, Any], admin: dict | None = None) -> dict[str, Any]:
         view = _order_view(o) or {}
         view.update({k: o.get(k, "") or "" for k in EXTRA_COLUMNS})
         view.update({"notes": o.get("notes", ""), "updated_at": o.get("updated_at", ""),
                      "whatsapp_from": o.get("whatsapp_from", "")})
+        if not admin or admin.get("role") != "owner":  # COD amounts and carrier fees: owner only
+            for k in MONEY_ONLY_OWNER:
+                view.pop(k, None)
         return view
 
     @router.get("/orders/{order_number}")
@@ -386,7 +409,7 @@ def build_admin_router(svc: Callable[[], Any], settings: Any) -> APIRouter:
         moves = stock.order_movements(o["order_number"]) if stock is not None else []
         if admin.get("role") != "owner":
             moves = [{k: v for k, v in m.items() if "cost" not in k} for m in moves]
-        return {"order": _full_order(o), "history": history, "last_modified": edits[0] if edits else None,
+        return {"order": _full_order(o, admin), "history": history, "last_modified": edits[0] if edits else None,
                 "stock_movements": moves}
 
     @router.patch("/orders/{order_number}")
@@ -408,15 +431,33 @@ def build_admin_router(svc: Callable[[], Any], settings: Any) -> APIRouter:
                 value = value.strip() if field == "internal_note" else " ".join(value.split())
             if str(value) != str(o.get(field, "") or ""):
                 changes[field] = value
+        if body.carrier_id is not None and str(body.carrier_id or "") != str(o.get("carrier_id") or ""):
+            if body.carrier_id:
+                c = delivery().carrier(body.carrier_id)
+                if not c:
+                    raise HTTPException(422, "livreur introuvable")
+                changes["carrier_id"], changes["carrier"] = str(c["id"]), c["name"]
+            else:
+                changes["carrier_id"], changes["carrier"] = "", ""
+        if body.carrier_fee is not None:
+            if admin.get("role") != "owner":
+                raise HTTPException(403, "Réservé au propriétaire.")
+            fee = str(round(body.carrier_fee * 100))
+            if fee != str(o.get("carrier_fee_cents") or ""):
+                changes["carrier_fee_cents"] = fee
+        if o.get("cod_status") == "remitted" and ({"quantity", "carrier_id", "carrier_fee_cents"} & set(changes)):
+            raise HTTPException(409, "Commande déjà encaissée auprès du livreur : quantité, livreur et frais sont verrouillés.")
         if "quantity" in changes:
             changes["total"] = order_total(changes["quantity"])
+            if o.get("cod_status") == "with_carrier":
+                changes["cod_amount_cents"] = str(changes["total"] * 100)
         if not changes:
-            return {"order": _full_order(o), "changed": []}
+            return {"order": _full_order(o, admin), "changed": []}
         _update_order(o["order_number"], admin, force=body.force, **changes)
         for field, value in changes.items():
             if field != "total":
                 _audit(admin, "order.edit", "order", o["order_number"], f"{field}: {o.get(field, '') or ''} → {value}")
-        return {"order": _full_order(orders.get(o["order_number"])), "changed": [k for k in changes if k != "total"]}
+        return {"order": _full_order(orders.get(o["order_number"]), admin), "changed": [k for k in changes if k != "total"]}
 
     from .admin_stock import add_stock_routes
 
@@ -424,4 +465,7 @@ def build_admin_router(svc: Callable[[], Any], settings: Any) -> APIRouter:
     from .admin_purchasing import add_purchasing_routes
 
     add_purchasing_routes(router, svc, owner_only, _audit)
+    from .admin_delivery import add_delivery_routes
+
+    add_delivery_routes(router, svc, current_admin, owner_only, _audit, delivery, apply_status, _update_order)
     return router
