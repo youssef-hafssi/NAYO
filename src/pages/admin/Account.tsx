@@ -1,4 +1,6 @@
 import { useState, type FormEvent } from 'react'
+import { Link } from 'react-router-dom'
+import { NAV } from './Layout'
 import { adminApi, Unauthorized } from '../../lib/adminApi'
 import { useAuth } from './AdminApp'
 import { BusyButton, FieldLabel, inputClass } from './ui'
@@ -42,6 +44,16 @@ export default function Account() {
       <p className="mt-6 fs-14 text-[#5a5050]">
         {me.name} · {me.email} · {me.role === 'owner' ? 'Propriétaire' : 'Agent'}
       </p>
+
+      {/* Phones: the screens that don't fit in the bottom bar */}
+      <nav aria-label="Autres écrans" className="mt-18 grid grid-cols-2 gap-8 md:hidden">
+        {NAV.filter((i) => (!i.ownerOnly || me.role === 'owner') && i.to !== '/admin/plus').map((i) => (
+          <Link key={i.to} to={i.to} className="flex min-h-48 items-center gap-10 r-12 border border-[#ece2dd] bg-[#fbf8f6] px-14 fs-14 font-semibold">
+            <i.icon className="size-18 text-[#3a0a10]" strokeWidth={1.8} aria-hidden />
+            {i.label}
+          </Link>
+        ))}
+      </nav>
 
       <form onSubmit={submit} className="mt-24 r-14 border border-[#ece2dd] bg-white p-18 md:p-24">
         <h2 className="fs-16 font-bold">Changer mon mot de passe</h2>

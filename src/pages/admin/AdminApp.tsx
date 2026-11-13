@@ -10,6 +10,7 @@ const Account = lazy(() => import('./Account'))
 const Stock = lazy(() => import('./Stock'))
 const Purchasing = lazy(() => import('./Purchasing'))
 const Delivery = lazy(() => import('./Delivery'))
+const Finance = lazy(() => import('./Finance'))
 const DeliveryPrint = lazy(() => import('./DeliveryPrint'))
 const PurchaseOrderDetail = lazy(() => import('./PurchaseOrderDetail'))
 
@@ -89,6 +90,14 @@ export default function AdminApp() {
             element={
               <Suspense fallback={null}>
                 <Stock />
+              </Suspense>
+            }
+          />
+          <Route
+            path="finance"
+            element={
+              <Suspense fallback={null}>
+                <Finance />
               </Suspense>
             }
           />

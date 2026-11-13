@@ -1,5 +1,5 @@
 import { NavLink, Outlet } from 'react-router-dom'
-import { MessageSquare, MoreHorizontal, Package, ShoppingCart, Truck, type LucideIcon } from 'lucide-react'
+import { MessageSquare, MoreHorizontal, Package, ShoppingCart, Truck, Wallet, type LucideIcon } from 'lucide-react'
 import { useAuth } from './AdminApp'
 import { WINE } from './ui'
 
@@ -15,12 +15,16 @@ export const NAV: NavItem[] = [
   { to: '/admin/delivery', label: 'Livraisons', icon: Truck },
   { to: '/admin/stock', label: 'Stock', icon: Package },
   { to: '/admin/purchasing', label: 'Achats', icon: ShoppingCart, ownerOnly: true },
+  { to: '/admin/finance', label: 'Finance', icon: Wallet, ownerOnly: true },
   { to: '/admin/plus', label: 'Plus', icon: MoreHorizontal },
 ]
 
 export default function Layout() {
   const { me } = useAuth()
   const items = NAV.filter((i) => !i.ownerOnly || me.role === 'owner')
+  // Phones: 4 tabs + "Plus" (the Plus page lists the other screens).
+  const more = items[items.length - 1]
+  const phoneItems = items.length > 5 ? [...items.slice(0, 4), more] : items
 
   return (
     <div className="flex h-[100dvh] flex-col bg-white text-[#1a1a1a] md:flex-row">
@@ -56,7 +60,7 @@ export default function Layout() {
 
       {/* Phones: bottom tab bar */}
       <nav aria-label="Navigation" className="flex h-58 shrink-0 border-t border-[#e8e8e8] bg-white md:hidden">
-        {items.map((i) => (
+        {phoneItems.map((i) => (
           <NavLink
             key={i.to}
             to={i.to}

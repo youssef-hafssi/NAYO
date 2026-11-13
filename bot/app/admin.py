@@ -374,6 +374,8 @@ def build_admin_router(svc: Callable[[], Any], settings: Any) -> APIRouter:
             fields["delivered_at"] = now_local()
         if status == "shipped":
             fields["shipped_at"] = now_local()
+        if status == "returned":
+            fields["returned_at"] = now_local()
         reason = (return_reason or "").strip()
         if status == "returned" and reason:
             fields["return_reason"] = reason
@@ -468,4 +470,7 @@ def build_admin_router(svc: Callable[[], Any], settings: Any) -> APIRouter:
     from .admin_delivery import add_delivery_routes
 
     add_delivery_routes(router, svc, current_admin, owner_only, _audit, delivery, apply_status, _update_order)
+    from .admin_finance import add_finance_routes
+
+    add_finance_routes(router, svc, owner_only, _audit, delivery)
     return router

@@ -155,6 +155,70 @@ export type ReturnRow = {
 }
 export type CarrierInput = { name: string; phone?: string; fee_delivered?: number; fee_returned?: number; remit_delay_days?: number; active?: boolean }
 
+export type ExpenseCategory = { id: number; name: string; active: boolean }
+export type Expense = {
+  id: number
+  date: string
+  category: string
+  amount_cents: number
+  supplier_id: number | null
+  campaign: string
+  note: string
+  recurring_monthly: boolean
+  recurring_parent_id: number | null
+  created_at: string
+  created_by: string
+}
+export type ExpenseInput = {
+  date: string
+  category: string
+  amount: number
+  supplier_id?: number | null
+  campaign?: string
+  note?: string
+  recurring_monthly?: boolean
+}
+export type Period = { preset?: 'today' | 'week' | 'month'; frm?: string; to?: string }
+export type FinanceReport = {
+  from: string
+  to: string
+  ledger_start: string | null
+  pnl: {
+    revenue_cents: number
+    cogs_cents: number
+    carrier_fees_cents: number
+    gross_margin_cents: number
+    expenses_cents: number
+    write_offs_cents: number
+    net_profit_cents: number
+    return_cost_cents: number
+  }
+  counts: { delivered: number; returned: number; units_delivered: number; units_lost: number; orders_without_cost: number; confirmed_created: number }
+  expenses_by_category: { category: string; amount_cents: number }[]
+  marketing: { ad_spend_cents: number; cpa_cents: number | null; roas: number | null; campaigns: { campaign: string; spend_cents: number }[] }
+  unit_economics: {
+    avg_revenue_cents: number | null
+    avg_cogs_cents: number | null
+    avg_carrier_fee_cents: number | null
+    cpa_cents: number | null
+    profit_per_order_cents: number | null
+    fixed_monthly_cents: number
+    break_even_orders_per_month: number | null
+  }
+  cash: {
+    in_cents: number
+    out_expenses_cents: number
+    out_suppliers_cents: number
+    net_cents: number
+    days: { date: string; in_cents: number; out_cents: number; balance_cents: number }[]
+    to_collect_cents: number
+    to_pay_cents: number
+  }
+}
+
+export const periodQuery = (p: Period) =>
+  p.preset ? `preset=${p.preset}` : `frm=${encodeURIComponent(p.frm ?? '')}&to=${encodeURIComponent(p.to ?? '')}`
+
 export type Supplier = { id: number; name: string; phone: string; city: string; note: string; active: boolean; created_at: string }
 export type POStatus = 'draft' | 'ordered' | 'partially_received' | 'received' | 'cancelled'
 export type PurchaseOrder = {
@@ -278,6 +342,20 @@ export const adminApi = {
     call<StockSummary>('/stock/restock', { method: 'POST', body: { quantity, unit_cost, note } }),
   stockAdjust: (new_quantity: number, note: string) =>
     call<StockSummary>('/stock/adjust', { method: 'POST', body: { new_quantity, note } }),
+  expenseCategories: (includeInactive = false) =>
+    call<{ items: ExpenseCategory[] }>(`/expense-categories${includeInactive ? '?include_inactive=true' : ''}`),
+  addCategory: (name: string) => call<ExpenseCategory>('/expense-categories', { method: 'POST', body: { name } }),
+  editCategory: (id: number, b: { name?: string; active?: boolean }) =>
+    call<ExpenseCategory>(`/expense-categories/${id}`, { method: 'PATCH', body: b }),
+  expenses: (p: Period, offset = 0, category?: string) =>
+    call<{ items: Expense[]; has_more: boolean; total_cents: number }>(
+      `/expenses?${periodQuery(p)}&limit=50&offset=${offset}${category ? `&category=${encodeURIComponent(category)}` : ''}`,
+    ),
+  addExpense: (b: ExpenseInput) => call<Expense>('/expenses', { method: 'POST', body: b }),
+  editExpense: (id: number, b: Partial<ExpenseInput>) => call<Expense>(`/expenses/${id}`, { method: 'PATCH', body: b }),
+  deleteExpense: (id: number) => call(`/expenses/${id}`, { method: 'DELETE' }),
+  financeReport: (p: Period) => call<FinanceReport>(`/finance/report?${periodQuery(p)}`),
+  financeExportUrl: (p: Period) => `/bot-api/admin/finance/export?${periodQuery(p)}`,
   carriers: (includeInactive = false) => call<{ items: Carrier[] }>(`/carriers${includeInactive ? '?include_inactive=true' : ''}`),
   createCarrier: (b: CarrierInput) => call<Carrier>('/carriers', { method: 'POST', body: b }),
   editCarrier: (id: number, b: Partial<CarrierInput>) => call<Carrier>(`/carriers/${id}`, { method: 'PATCH', body: b }),
