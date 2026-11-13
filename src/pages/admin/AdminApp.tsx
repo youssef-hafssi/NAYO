@@ -8,6 +8,8 @@ import Inbox from './Inbox'
 const OrderDetail = lazy(() => import('./OrderDetail'))
 const Account = lazy(() => import('./Account'))
 const Stock = lazy(() => import('./Stock'))
+const Purchasing = lazy(() => import('./Purchasing'))
+const PurchaseOrderDetail = lazy(() => import('./PurchaseOrderDetail'))
 
 /*
  * /admin — team back-office. Login first, then nested pages inside the shared layout (sidebar on desktop,
@@ -77,6 +79,22 @@ export default function AdminApp() {
             element={
               <Suspense fallback={null}>
                 <Stock />
+              </Suspense>
+            }
+          />
+          <Route
+            path="purchasing"
+            element={
+              <Suspense fallback={null}>
+                <Purchasing />
+              </Suspense>
+            }
+          />
+          <Route
+            path="purchasing/:id"
+            element={
+              <Suspense fallback={null}>
+                <PurchaseOrderDetail />
               </Suspense>
             }
           />

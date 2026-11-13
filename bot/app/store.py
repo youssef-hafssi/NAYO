@@ -295,6 +295,15 @@ class Store:
         )
         return int(row[0])
 
+    def next_counter(self, name: str, first: int = 1) -> int:
+        """Atomic sequence (PO numbers…): one UPSERT … RETURNING, same as order numbers."""
+        row = self._exec(
+            "INSERT INTO counters (name, value) VALUES (?, ?) "
+            "ON CONFLICT (name) DO UPDATE SET value = counters.value + 1 RETURNING value",
+            (name, first), fetch="one",
+        )
+        return int(row[0])
+
     def get_request(self, client_id: str) -> tuple[str, bool] | None:
         row = self._exec("SELECT order_number, written FROM order_requests WHERE client_id = ?", (client_id,), fetch="one")
         return (row[0], bool(row[1])) if row else None

@@ -184,3 +184,32 @@ export function usePolling(run: () => Promise<unknown>, ms: number, enabled: boo
     }
   }, [ms, enabled, key])
 }
+
+export const PO_STATUS_LABEL: Record<string, string> = {
+  draft: 'Brouillon',
+  ordered: 'Commandée',
+  partially_received: 'Reçue en partie',
+  received: 'Reçue',
+  cancelled: 'Annulée',
+}
+export const PO_STATUS_PILL: Record<string, string> = {
+  draft: 'bg-[#efefef] text-[#6b6b6b]',
+  ordered: 'bg-[#eaf3fb] text-[#1d6fa5]',
+  partially_received: 'bg-[#fdf0de] text-[#c2650a]',
+  received: 'bg-[#dff3e6] text-[#17703c]',
+  cancelled: 'bg-[#fbe5e5] text-[#a12a2a]',
+}
+export const PAYMENT_LABEL: Record<string, string> = { unpaid: 'Non payée', partial: 'Payée en partie', paid: 'Payée' }
+export const METHOD_LABEL: Record<string, string> = { cash: 'Espèces', virement: 'Virement', 'chèque': 'Chèque', autre: 'Autre' }
+
+export function Pill({ className, children }: { className: string; children: ReactNode }) {
+  return <span className={`inline-block whitespace-nowrap r-5 px-8 py-2 fs-11.5 lh-16 font-semibold ${className}`}>{children}</span>
+}
+
+/** "12,5" / "12.50" → 12.5 ; '' → 0 ; invalid → NaN */
+export const parseMad = (v: string) => {
+  const t = v.trim().replace(/\s/g, '').replace(',', '.')
+  if (!t) return 0
+  return /^\d+(\.\d{1,2})?$/.test(t) ? Number(t) : NaN
+}
+export const fmtDate = (s: string | null | undefined) => (s ? s.slice(0, 10).split('-').reverse().join('/') : '—')

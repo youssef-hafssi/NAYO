@@ -183,11 +183,19 @@ class Stock:
             raise ValueError("entrée invalide")
         self._require_tracking()
         with self.store.tx(LOCK) as tx:
-            bal, avg = self._state(tx)
-            new_bal = bal + quantity
-            new_avg = round((bal * avg + quantity * unit_cost_cents) / new_bal) if bal > 0 else unit_cost_cents
-            mid = self._insert(tx, delta=quantity, reason=reason, unit_cost=unit_cost_cents, balance=new_bal,
-                               avg=new_avg, admin=admin, note=note, ref_type=ref_type, ref_id=ref_id)
+            return self.receive_in(tx, quantity, unit_cost_cents, reason=reason, admin=admin, note=note,
+                                   ref_type=ref_type, ref_id=ref_id)
+
+    def receive_in(self, tx: Any, quantity: int, unit_cost_cents: int, *, reason: str, admin: str | None = None,
+                   note: str = "", ref_type: str | None = None, ref_id: str | None = None) -> dict[str, Any]:
+        """Same as receive(), inside a transaction the caller already holds under LOCK (purchase receipts)."""
+        if reason not in ENTRY_REASONS or not 1 <= quantity <= MAX_UNITS:
+            raise ValueError("entrée invalide")
+        bal, avg = self._state(tx)
+        new_bal = bal + quantity
+        new_avg = round((bal * avg + quantity * unit_cost_cents) / new_bal) if bal > 0 else unit_cost_cents
+        mid = self._insert(tx, delta=quantity, reason=reason, unit_cost=unit_cost_cents, balance=new_bal,
+                           avg=new_avg, admin=admin, note=note, ref_type=ref_type, ref_id=ref_id)
         return {"id": mid, "on_hand": new_bal, "avg_cost_cents": new_avg}
 
     def adjust(self, new_quantity: int, note: str, admin: str) -> dict[str, Any] | None:

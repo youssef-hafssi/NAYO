@@ -421,4 +421,7 @@ def build_admin_router(svc: Callable[[], Any], settings: Any) -> APIRouter:
     from .admin_stock import add_stock_routes
 
     add_stock_routes(router, svc, current_admin, owner_only, _audit)
+    from .admin_purchasing import add_purchasing_routes
+
+    add_purchasing_routes(router, svc, owner_only, _audit)
     return router

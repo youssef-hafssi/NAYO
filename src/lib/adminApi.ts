@@ -83,6 +83,46 @@ export type StockMovement = {
   avg_cost_cents_after?: number // owner only
 }
 
+export type Supplier = { id: number; name: string; phone: string; city: string; note: string; active: boolean; created_at: string }
+export type POStatus = 'draft' | 'ordered' | 'partially_received' | 'received' | 'cancelled'
+export type PurchaseOrder = {
+  id: number
+  number: string
+  supplier_id: number
+  supplier_name: string
+  ordered_at: string | null
+  expected_at: string | null
+  status: POStatus
+  quantity: number
+  unit_cost_cents: number
+  shipping_cost_cents: number
+  other_costs_cents: number
+  note: string
+  created_at: string
+  created_by: string
+  received_qty: number
+  remaining_qty: number
+  paid_cents: number
+  due_cents: number
+  total_cents: number
+  landed_unit_cost_cents: number
+  payment_status: 'unpaid' | 'partial' | 'paid'
+  late: boolean
+}
+export type Receipt = { id: number; at: string; quantity: number; landed_unit_cost_cents: number; admin_name: string }
+export type SupplierPayment = { id: number; at: string; amount_cents: number; method: string; note: string; admin_name: string }
+export type POInput = {
+  supplier_id: number
+  quantity: number
+  unit_cost: number
+  shipping_cost?: number
+  other_costs?: number
+  ordered_at?: string | null
+  expected_at?: string | null
+  note?: string
+  status?: 'draft' | 'ordered'
+}
+
 export type StockSummary = {
   tracking: boolean
   ledger_start: string | null
@@ -166,5 +206,32 @@ export const adminApi = {
     call<StockSummary>('/stock/restock', { method: 'POST', body: { quantity, unit_cost, note } }),
   stockAdjust: (new_quantity: number, note: string) =>
     call<StockSummary>('/stock/adjust', { method: 'POST', body: { new_quantity, note } }),
+  suppliers: (includeInactive = false) =>
+    call<{ items: Supplier[] }>(`/suppliers${includeInactive ? '?include_inactive=true' : ''}`),
+  createSupplier: (b: { name: string; phone?: string; city?: string; note?: string }) =>
+    call<Supplier>('/suppliers', { method: 'POST', body: b }),
+  editSupplier: (id: number, b: Partial<Omit<Supplier, 'id' | 'created_at'>>) =>
+    call<Supplier>(`/suppliers/${id}`, { method: 'PATCH', body: b }),
+  purchasingSummary: () => call<{ debts_cents: number; open: number; late: number }>('/purchasing/summary'),
+  purchaseOrders: (q: { status?: string; supplier_id?: number; late?: boolean; offset?: number }) => {
+    const p = new URLSearchParams({ limit: '50', offset: String(q.offset ?? 0) })
+    if (q.status) p.set('status', q.status)
+    if (q.supplier_id) p.set('supplier_id', String(q.supplier_id))
+    if (q.late) p.set('late', 'true')
+    return call<{ items: PurchaseOrder[]; has_more: boolean }>(`/purchase-orders?${p}`)
+  },
+  createPO: (b: POInput) => call<PurchaseOrder>('/purchase-orders', { method: 'POST', body: b }),
+  getPO: (id: number) =>
+    call<{ po: PurchaseOrder; receipts: Receipt[]; payments: SupplierPayment[]; supplier: Supplier | null }>(`/purchase-orders/${id}`),
+  editPO: (id: number, b: Partial<POInput>) => call<PurchaseOrder>(`/purchase-orders/${id}`, { method: 'PATCH', body: b }),
+  setPOStatus: (id: number, status: 'ordered' | 'cancelled') =>
+    call<PurchaseOrder>(`/purchase-orders/${id}/status`, { method: 'POST', body: { status } }),
+  receivePO: (id: number, quantity: number, note = '') =>
+    call<{ po: PurchaseOrder; landed_unit_cost_cents: number; on_hand: number }>(`/purchase-orders/${id}/receive`, {
+      method: 'POST',
+      body: { quantity, note },
+    }),
+  payPO: (id: number, amount: number, method: string, note = '', at?: string) =>
+    call<PurchaseOrder>(`/purchase-orders/${id}/payments`, { method: 'POST', body: { amount, method, note, ...(at ? { at } : {}) } }),
   stockThreshold: (value: number) => call<StockSummary>('/stock/threshold', { method: 'POST', body: { value } }),
 }
