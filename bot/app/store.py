@@ -11,6 +11,7 @@ from __future__ import annotations
 import logging
 import random
 import sqlite3
+import threading
 import time
 from contextlib import contextmanager
 from dataclasses import dataclass
@@ -19,6 +20,10 @@ from typing import Any, Iterator
 log = logging.getLogger("nayo.store")
 
 FIRST_ORDER_NUMBER = 1001
+
+# Bump when SCHEMA / MIGRATIONS / RLS_TABLES change: the DDL then runs once on the next start-up.
+# (Each component keeps its own version under the settings key "schema:<name>".)
+STORE_SCHEMA_VERSION = 3
 
 SCHEMA = [
     "CREATE TABLE IF NOT EXISTS counters (name TEXT PRIMARY KEY, value BIGINT NOT NULL)",
@@ -119,16 +124,47 @@ class Store:
             raise RuntimeError("STATE_BACKEND=postgres needs DATABASE_URL")
         if backend == "sqlite":
             log.warning("STATE_BACKEND=sqlite (%s): fine for local dev, state is lost on free hosts — use postgres in production", sqlite_path)
-        for stmt in SCHEMA:
-            self._exec(stmt)
-        for table, column, decl in MIGRATIONS:
-            self._ensure_column(table, column, decl)
-        if backend == "postgres":
-            # Supabase exposes the `public` schema through its REST API: RLS with no policies blocks that
-            # entirely, while the bot's own connection (table owner) is unaffected.
-            for table in RLS_TABLES:
-                self._exec(f"ALTER TABLE {table} ENABLE ROW LEVEL SECURITY")
-        self._exec("UPDATE admin_users SET role = 'owner' WHERE role IS NULL OR role = ''")
+        # One Postgres connection per warm instance, shared by every statement (serialized by this lock).
+        self._lock = threading.RLock()
+        self._pg: Any = None
+        # One query at start-up: which schema versions are already applied.
+        self._schema = self._read_schema_versions()
+        if self.needs_schema("store", STORE_SCHEMA_VERSION):
+            for stmt in SCHEMA:
+                self._exec(stmt)
+            for table, column, decl in MIGRATIONS:
+                self._ensure_column(table, column, decl)
+            if backend == "postgres":
+                # Supabase exposes the `public` schema through its REST API: RLS with no policies blocks that
+                # entirely, while the bot's own connection (table owner) is unaffected.
+                for table in RLS_TABLES:
+                    self._exec(f"ALTER TABLE {table} ENABLE ROW LEVEL SECURITY")
+            self._exec("UPDATE admin_users SET role = 'owner' WHERE role IS NULL OR role = ''")
+            self.schema_done("store", STORE_SCHEMA_VERSION)
+
+    # -- schema versions -----------------------------------------------------------------------
+    def _read_schema_versions(self) -> dict[str, int]:
+        try:
+            rows = self._exec("SELECT key, value FROM settings WHERE key LIKE 'schema:%'", fetch="all")
+        except Exception:  # first start: the settings table doesn't exist yet
+            if self.backend == "postgres":
+                self._drop_pg()
+            return {}
+        out: dict[str, int] = {}
+        for k, v in rows:
+            try:
+                out[k.split(":", 1)[1]] = int(v)
+            except ValueError:
+                pass
+        return out
+
+    def needs_schema(self, name: str, version: int) -> bool:
+        """True when the component's CREATE/ALTER statements must run (all of them are idempotent)."""
+        return self._schema.get(name, 0) < version
+
+    def schema_done(self, name: str, version: int) -> None:
+        self.set_setting(f"schema:{name}", str(version))
+        self._schema[name] = version
 
     def _ensure_column(self, table: str, column: str, decl: str) -> None:
         if self.backend == "postgres":
@@ -139,14 +175,28 @@ class Store:
                 self._exec(f"ALTER TABLE {table} ADD COLUMN {column} {decl}")
 
     # -- low level ---------------------------------------------------------------------------
-    @contextmanager
-    def _conn(self) -> Iterator[Any]:
-        if self.backend == "postgres":
+    def _pg_conn(self) -> Any:
+        """The instance's shared connection (opened on first use, reopened if it was closed or broken)."""
+        if self._pg is None or self._pg.closed or getattr(self._pg, "broken", False):
             import psycopg  # imported lazily so local dev doesn't need it
 
             # prepare_threshold=None → works behind Supabase's transaction pooler (port 6543)
-            with psycopg.connect(self.database_url, autocommit=True, prepare_threshold=None) as conn:
-                yield conn
+            self._pg = psycopg.connect(self.database_url, autocommit=True, prepare_threshold=None, connect_timeout=10)
+        return self._pg
+
+    def _drop_pg(self) -> None:
+        try:
+            if self._pg is not None:
+                self._pg.close()
+        except Exception:
+            pass
+        self._pg = None
+
+    @contextmanager
+    def _conn(self) -> Iterator[Any]:
+        if self.backend == "postgres":
+            with self._lock:
+                yield self._pg_conn()
         else:
             conn = sqlite3.connect(self.sqlite_path, timeout=10, isolation_level=None)  # autocommit
             try:
@@ -166,21 +216,29 @@ class Store:
     def tx(self, lock: str = "") -> Iterator["Tx"]:
         """One transaction on one connection. `lock` serializes writers sharing that name (Postgres advisory
         lock held until commit; SQLite: BEGIN IMMEDIATE takes the database write lock). Rolls back on error."""
-        with self._conn() as conn:
-            if self.backend == "postgres":
-                with conn.transaction():
-                    cur = conn.cursor()
-                    if lock:
-                        cur.execute("SELECT pg_advisory_xact_lock(hashtext(%s))", (lock,))
-                    yield Tx(self, cur)
-            else:
-                conn.execute("BEGIN IMMEDIATE")
+        if self.backend == "postgres":
+            import psycopg
+
+            with self._lock:
+                conn = self._pg_conn()
                 try:
-                    yield Tx(self, conn.cursor())
-                    conn.execute("COMMIT")
-                except BaseException:
-                    conn.execute("ROLLBACK")
+                    with conn.transaction():
+                        cur = conn.cursor()
+                        if lock:
+                            cur.execute("SELECT pg_advisory_xact_lock(hashtext(%s))", (lock,))
+                        yield Tx(self, cur)
+                except (psycopg.OperationalError, psycopg.InterfaceError):
+                    self._drop_pg()  # the next statement reconnects (a transaction is never replayed)
                     raise
+            return
+        with self._conn() as conn:  # SQLite (tests / local dev)
+            conn.execute("BEGIN IMMEDIATE")
+            try:
+                yield Tx(self, conn.cursor())
+                conn.execute("COMMIT")
+            except BaseException:
+                conn.execute("ROLLBACK")
+                raise
 
     # -- settings (key/value) ----------------------------------------------------------------
     def get_setting(self, key: str, default: str = "") -> str:
@@ -194,14 +252,29 @@ class Store:
         )
 
     def _exec(self, sql: str, params: tuple = (), fetch: str | None = None) -> Any:
-        with self._conn() as conn:
-            cur = conn.cursor()
-            cur.execute(self._sql(sql), params)
-            if fetch == "one":
-                return cur.fetchone()
-            if fetch == "all":
-                return cur.fetchall()
-            return None
+        if self.backend != "postgres":
+            with self._conn() as conn:
+                return self._run(conn.cursor(), sql, params, fetch)
+        import psycopg
+
+        with self._lock:
+            try:
+                with self._pg_conn().cursor() as cur:
+                    return self._run(cur, sql, params, fetch)
+            except (psycopg.OperationalError, psycopg.InterfaceError) as e:
+                # Connection dropped (pooler restart, idle timeout…): reconnect once and retry the statement.
+                log.warning("database connection lost (%s) - reconnecting", type(e).__name__)
+                self._drop_pg()
+                with self._pg_conn().cursor() as cur:
+                    return self._run(cur, sql, params, fetch)
+
+    def _run(self, cur: Any, sql: str, params: tuple, fetch: str | None) -> Any:
+        cur.execute(self._sql(sql), params)
+        if fetch == "one":
+            return cur.fetchone()
+        if fetch == "all":
+            return cur.fetchall()
+        return None
 
     def ping(self) -> bool:
         try:
@@ -291,10 +364,15 @@ class Store:
         unknown = set(fields) - CONV_FIELDS
         if unknown:
             raise ValueError(f"unknown conversation fields: {unknown}")
-        self._exec("INSERT INTO conversations (phone) VALUES (?) ON CONFLICT (phone) DO NOTHING", (phone,))
-        if fields:
-            cols = ", ".join(f"{k} = ?" for k in fields)  # keys are whitelisted above
-            self._exec(f"UPDATE conversations SET {cols} WHERE phone = ?", (*fields.values(), phone))
+        if not fields:
+            self._exec("INSERT INTO conversations (phone) VALUES (?) ON CONFLICT (phone) DO NOTHING", (phone,))
+            return
+        # One statement: create the row if needed and set the fields (keys are whitelisted above).
+        cols = ", ".join(fields)
+        marks = ", ".join("?" for _ in fields)
+        sets = ", ".join(f"{k} = excluded.{k}" for k in fields)
+        self._exec(f"INSERT INTO conversations (phone, {cols}) VALUES (?, {marks}) "
+                   f"ON CONFLICT (phone) DO UPDATE SET {sets}", (phone, *fields.values()))
 
     def touch_client(self, phone: str, now: float | None = None) -> None:
         self.update_conv(phone, last_client_at=now or time.time())
@@ -373,6 +451,22 @@ class Store:
             (entity, str(entity_id), limit), fetch="all",
         )
         return [{"at": r[0], "admin_name": r[1], "action": r[2], "details": r[3]} for r in rows]
+
+    def auth_admin(self, admin_id: str, now: float | None = None, touch_every_s: float = 30) -> dict[str, Any] | None:
+        """Loads the logged-in admin and refreshes last_seen_at (at most every 30 s) in ONE statement."""
+        now = now or time.time()
+        row = self._exec(
+            "UPDATE admin_users SET last_seen_at = CASE WHEN last_seen_at IS NULL OR last_seen_at < ? THEN ? "
+            "ELSE last_seen_at END WHERE id = ? RETURNING id, email, name, role, password_hash",
+            (now - touch_every_s, now, admin_id), fetch="one",
+        )
+        if not row:
+            return None
+        return {"id": row[0], "email": row[1], "name": row[2], "role": row[3] or "owner", "password_hash": row[4]}
+
+    def get_settings(self, keys: tuple[str, ...]) -> dict[str, str]:
+        marks = ", ".join("?" for _ in keys)
+        return dict(self._exec(f"SELECT key, value FROM settings WHERE key IN ({marks})", tuple(keys), fetch="all"))
 
     def touch_admin(self, admin_id: str, now: float | None = None) -> None:
         self._exec("UPDATE admin_users SET last_seen_at = ? WHERE id = ?", (now or time.time(), admin_id))

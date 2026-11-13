@@ -52,8 +52,16 @@ MOVE_COLUMNS = ("id, at, delta, reason, order_number, ref_type, ref_id, admin_na
 
 
 class Stock:
+    SCHEMA_VERSION = 1
+
     def __init__(self, store: Any):
         self.store = store
+        if store.needs_schema("stock", self.SCHEMA_VERSION):
+            self._create(store)
+            store.schema_done("stock", self.SCHEMA_VERSION)
+
+    @staticmethod
+    def _create(store: Any) -> None:
         store._exec(
             f"""CREATE TABLE IF NOT EXISTS stock_movements (
                 id {store.serial_pk},
@@ -122,6 +130,8 @@ class Stock:
         return int(row[0])
 
     def summary(self) -> dict[str, Any]:
+        cfg = self.store.get_settings(("stock_tracking_started", "stock_low_threshold", "stock_ledger_start"))
+        tracking = cfg.get("stock_tracking_started") == "1"
         on_hand, avg = self.current()
         since = (datetime.now(TZ) - timedelta(days=14)).strftime("%Y-%m-%d %H:%M:%S")
         row = self.store._exec(
@@ -131,16 +141,16 @@ class Stock:
         )
         out_14d = max(int(row[0] or 0), 0)
         per_day = out_14d / 14
-        threshold = self.threshold()
+        threshold = _int(cfg.get("stock_low_threshold", DEFAULT_THRESHOLD), DEFAULT_THRESHOLD)
         return {
-            "tracking": self.tracking(),
-            "ledger_start": self.store.get_setting("stock_ledger_start") or None,
+            "tracking": tracking,
+            "ledger_start": cfg.get("stock_ledger_start") or None,
             "on_hand": on_hand,
             "avg_cost_cents": avg,
             "stock_value_cents": max(on_hand, 0) * avg,
             "low_threshold": threshold,
-            "low": self.tracking() and on_hand <= threshold,
-            "out": self.tracking() and on_hand <= 0,
+            "low": tracking and on_hand <= threshold,
+            "out": tracking and on_hand <= 0,
             "sold_14d": out_14d,
             "days_of_stock": round(on_hand / per_day, 1) if per_day > 0 and on_hand > 0 else None,
         }

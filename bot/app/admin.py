@@ -141,10 +141,10 @@ def build_admin_router(svc: Callable[[], Any], settings: Any) -> APIRouter:
         if not settings.admin_secret:
             raise HTTPException(503, "admin disabled (ADMIN_SECRET not set)")
         admin_id = read_session(settings.admin_secret, request.cookies.get(COOKIE))
-        admin = svc().store.get_admin(admin_id) if admin_id else None
+        # One statement: load the admin and refresh last_seen_at (at most every 30 s).
+        admin = svc().store.auth_admin(admin_id) if admin_id else None
         if not admin:
             raise HTTPException(401, "not logged in")
-        svc().store.touch_admin(admin["id"])
         return admin
 
     def owner_only(admin: dict = Depends(current_admin)) -> dict[str, Any]:
@@ -241,9 +241,25 @@ def build_admin_router(svc: Callable[[], Any], settings: Any) -> APIRouter:
         if filter not in STATUS_FILTERS:
             raise HTTPException(400, "bad filter")
         items = []
-        for row in svc().store.conversation_rows():
+        rows = svc().store.conversation_rows()
+        # All the orders of the listed conversations in ONE query (no query per row).
+        batch = getattr(svc().orders, "for_conversations", None)
+        by_number: dict[str, dict[str, Any]] = {}
+        by_phone: dict[str, dict[str, Any]] = {}
+        if callable(batch):
+            found = batch([r["conv"].phone for r in rows],
+                          [r["conv"].order_number for r in rows if r["conv"].order_number])
+            for o in found:  # newest first
+                by_number.setdefault(o["order_number"].upper(), o)
+                if o.get("status") in ALL_STATUSES:
+                    by_phone.setdefault(o["phone"], o)
+        for row in rows:
             conv = row["conv"]
-            order = _order_for(conv, conv.phone)
+            if callable(batch):
+                order = (by_number.get((conv.order_number or "").upper()) if conv.order_number else None) \
+                    or by_phone.get(conv.phone)
+            else:
+                order = _order_for(conv, conv.phone)
             status = order.get("status", "") if order else ""
             if filter != "all" and status != filter:
                 continue
@@ -261,8 +277,10 @@ def build_admin_router(svc: Callable[[], Any], settings: Any) -> APIRouter:
         store = svc().store
         conv = store.get_conv(p)
         messages = store.thread(p)
-        # Read up to the newest message shown (robust to clock differences between servers).
-        store.update_conv(p, admin_read_at=max([time.time()] + [m["at"] for m in messages]))
+        # Mark as read only when there is something new (robust to clock differences between servers).
+        newest = max((m["at"] for m in messages), default=0)
+        if newest > (conv.admin_read_at or 0):
+            store.update_conv(p, admin_read_at=max(time.time(), newest))
         return {
             "conversation": {"phone": p, "taken_over_by": conv.taken_over_by, "internal_notes": conv.internal_notes or "",
                              **_window(conv)},

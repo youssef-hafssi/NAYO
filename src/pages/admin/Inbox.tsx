@@ -10,7 +10,7 @@ import {
   type Status,
   type Thread,
 } from '../../lib/adminApi'
-import { Chip, FILTERS, formatPhone, hhmm, listTime, POLL_MS, StatusPill, WINE, windowLeft, withStockConfirm } from './ui'
+import { Chip, FILTERS, formatPhone, hhmm, listTime, POLL_MS, StatusPill, usePolling, WINE, windowLeft, withStockConfirm } from './ui'
 
 /*
  * Admin inbox (/admin/inbox) — approved mockup: header, conversation list with filter chips, chat thread with
@@ -205,9 +205,8 @@ export default function Inbox({ onLogout }: { onLogout: () => void }) {
 
   useEffect(() => {
     loadList()
-    const id = setInterval(loadList, POLL_MS)
-    return () => clearInterval(id)
   }, [loadList])
+  usePolling(loadList, POLL_MS, true, loadList)
 
   useEffect(() => {
     if (!selected) return
@@ -216,9 +215,8 @@ export default function Inbox({ onLogout }: { onLogout: () => void }) {
     loadThread(selected, true).finally(() => {
       if (selectedRef.current === selected) setThreadLoading(false)
     })
-    const id = setInterval(() => loadThread(selected), POLL_MS)
-    return () => clearInterval(id)
   }, [selected, loadThread])
+  usePolling(() => (selected ? loadThread(selected) : Promise.resolve()), POLL_MS, Boolean(selected), selected)
 
   useEffect(() => {
     const id = setInterval(() => setTick((t) => t + 1), 30000) // refresh "expire dans …"

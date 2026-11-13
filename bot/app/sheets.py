@@ -192,8 +192,12 @@ class DbOrders:
     Same columns as the Google Sheet. View/edit them in Supabase → Table Editor → orders.
     """
 
+    SCHEMA_VERSION = 2  # bump when columns / indexes below change
+
     def __init__(self, store: Any):
         self.store = store
+        if not store.needs_schema("orders", self.SCHEMA_VERSION):
+            return
         cols = ", ".join(f"{h} TEXT NOT NULL DEFAULT ''" for h in HEADERS if h != "order_number")
         store._exec(f"CREATE TABLE IF NOT EXISTS orders (order_number TEXT PRIMARY KEY, {cols})")
         for col in EXTRA_COLUMNS:
@@ -203,6 +207,7 @@ class DbOrders:
         store._exec("CREATE INDEX IF NOT EXISTS orders_created ON orders (created_at)")
         if store.backend == "postgres":
             store._exec("ALTER TABLE orders ENABLE ROW LEVEL SECURITY")
+        store.schema_done("orders", self.SCHEMA_VERSION)
 
     SELECT = ", ".join(ALL_COLUMNS)
 
@@ -242,6 +247,19 @@ class DbOrders:
         self.store._exec(
             f"UPDATE orders SET {sets} WHERE UPPER(order_number) = UPPER(?)", (*[str(v) for v in fields.values()], order_number)
         )
+
+    def for_conversations(self, phones: list[str], numbers: list[str]) -> list[dict[str, Any]]:
+        """Every order of these phones or with these numbers, newest first — ONE query for a whole inbox page."""
+        if not phones and not numbers:
+            return []
+        p_marks = ", ".join("?" for _ in phones) or "''"
+        n_marks = ", ".join("?" for _ in numbers) or "''"
+        rows = self.store._exec(
+            f"SELECT {self.SELECT} FROM orders WHERE phone IN ({p_marks}) OR UPPER(order_number) IN ({n_marks}) "
+            "ORDER BY created_at DESC, order_number DESC",
+            (*phones, *[n.upper() for n in numbers]), fetch="all",
+        )
+        return [self._row(r) for r in rows]
 
     def units_in(self, statuses: tuple[str, ...]) -> list[tuple[str, int]]:
         """(order_number, quantity) of every order in these statuses — used to backfill the stock ledger."""

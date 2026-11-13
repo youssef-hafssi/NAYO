@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react'
+import { useEffect, useRef, type ReactNode } from 'react'
 import type { Filter, Status } from '../../lib/adminApi'
 
 /* Shared admin UI: palette, status labels, small components. Moved from the original Admin.tsx. */
@@ -151,4 +151,36 @@ export async function withStockConfirm(run: (force: boolean) => Promise<unknown>
     await run(true)
     return true
   }
+}
+
+/**
+ * Calls `run` every `ms` while `enabled`: never starts a poll while the previous one is still running, and
+ * pauses while the tab is hidden (one immediate refresh when it becomes visible again). `key` restarts it.
+ */
+export function usePolling(run: () => Promise<unknown>, ms: number, enabled: boolean, key?: unknown) {
+  const runRef = useRef(run)
+  runRef.current = run
+  useEffect(() => {
+    if (!enabled) return
+    let busy = false
+    const tick = () => {
+      if (busy || document.hidden) return
+      busy = true
+      Promise.resolve()
+        .then(() => runRef.current())
+        .catch(() => undefined)
+        .finally(() => {
+          busy = false
+        })
+    }
+    const id = window.setInterval(tick, ms)
+    const onVisible = () => {
+      if (!document.hidden) tick()
+    }
+    document.addEventListener('visibilitychange', onVisible)
+    return () => {
+      window.clearInterval(id)
+      document.removeEventListener('visibilitychange', onVisible)
+    }
+  }, [ms, enabled, key])
 }
