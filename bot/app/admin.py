@@ -481,4 +481,7 @@ def build_admin_router(svc: Callable[[], Any], settings: Any) -> APIRouter:
     from .admin_crm import add_crm_routes
 
     add_crm_routes(router, svc, current_admin, owner_only, _audit, delivery, apply_status, _update_order)
+    from .admin_reports import add_reports_routes
+
+    add_reports_routes(router, svc, current_admin, owner_only, _audit, delivery)
     return router

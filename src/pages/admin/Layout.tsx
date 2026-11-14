@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import { NavLink, Outlet } from 'react-router-dom'
-import { BellRing, ClipboardList, MessageSquare, MoreHorizontal, Package, ShoppingCart, Truck, Users, Wallet, type LucideIcon } from 'lucide-react'
+import { BarChart3, BellRing, ClipboardList, LayoutDashboard, MessageSquare, MoreHorizontal, Package, ShoppingCart, Truck, Users, Wallet, type LucideIcon } from 'lucide-react'
 import { adminApi } from '../../lib/adminApi'
 import { useAuth } from './AdminApp'
 import { usePolling, WINE } from './ui'
@@ -13,6 +13,7 @@ import { usePolling, WINE } from './ui'
 type NavItem = { to: string; label: string; icon: LucideIcon; ownerOnly?: boolean; badge?: number }
 
 export const NAV: NavItem[] = [
+  { to: '/admin/dashboard', label: 'Accueil', icon: LayoutDashboard },
   { to: '/admin/inbox', label: 'Inbox', icon: MessageSquare },
   { to: '/admin/orders', label: 'Commandes', icon: ClipboardList },
   { to: '/admin/follow-ups', label: 'Relances', icon: BellRing },
@@ -21,6 +22,7 @@ export const NAV: NavItem[] = [
   { to: '/admin/stock', label: 'Stock', icon: Package },
   { to: '/admin/purchasing', label: 'Achats', icon: ShoppingCart, ownerOnly: true },
   { to: '/admin/finance', label: 'Finance', icon: Wallet, ownerOnly: true },
+  { to: '/admin/reports', label: 'Rapports', icon: BarChart3, ownerOnly: true },
   { to: '/admin/plus', label: 'Plus', icon: MoreHorizontal },
 ]
 

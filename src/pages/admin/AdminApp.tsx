@@ -15,6 +15,9 @@ const Orders = lazy(() => import('./Orders'))
 const Customers = lazy(() => import('./Customers'))
 const CustomerDetail = lazy(() => import('./CustomerDetail'))
 const FollowUps = lazy(() => import('./FollowUps'))
+const Dashboard = lazy(() => import('./Dashboard'))
+const Reports = lazy(() => import('./Reports'))
+const ClosingPrint = lazy(() => import('./ClosingPrint'))
 const DeliveryPrint = lazy(() => import('./DeliveryPrint'))
 const PurchaseOrderDetail = lazy(() => import('./PurchaseOrderDetail'))
 
@@ -71,6 +74,14 @@ export default function AdminApp() {
     <AuthContext.Provider value={{ me, refresh, logout }}>
       <Routes>
         <Route
+          path="reports/closing/print"
+          element={
+            <Suspense fallback={null}>
+              <ClosingPrint />
+            </Suspense>
+          }
+        />
+        <Route
           path="delivery/print"
           element={
             <Suspense fallback={null}>
@@ -79,7 +90,7 @@ export default function AdminApp() {
           }
         />
         <Route element={<Layout />}>
-          <Route index element={<Navigate to="inbox" replace />} />
+          <Route index element={<Navigate to="dashboard" replace />} />
           <Route path="inbox" element={<Inbox onLogout={logout} />} />
           {(
             [
@@ -87,6 +98,8 @@ export default function AdminApp() {
               ['customers', <Customers />],
               ['customers/:phone', <CustomerDetail />],
               ['follow-ups', <FollowUps />],
+              ['dashboard', <Dashboard />],
+              ['reports', <Reports />],
             ] as const
           ).map(([path, el]) => (
             <Route key={path} path={path} element={<Suspense fallback={null}>{el}</Suspense>} />

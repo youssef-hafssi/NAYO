@@ -303,6 +303,90 @@ const qs = (o: Record<string, string | number | undefined>) =>
 const orderQs = (f: OrderFilters) =>
   qs({ q: f.q, status: f.status?.join(','), frm: f.frm, to: f.to, city: f.city, carrier_id: f.carrier_id, source: f.source, sort: f.sort, dir: f.dir })
 
+export type Rate = { rate: number | null }
+export type Dashboard = {
+  generated_at: string
+  orders: { today: number; week: number; month: number }
+  confirmation_rate: Rate & { confirmed: number; decided: number }
+  delivery_rate: Rate & { delivered: number; returned: number }
+  units_month: number
+  needs_human: number
+  in_progress: { orders: number }
+  chart: { date: string; orders: number; delivered: number; revenue_cents?: number }[]
+  top_cities: { city: string; orders: number }[]
+  stock?: { tracking: boolean; on_hand: number; low: boolean; out: boolean; days_of_stock: number | null; low_threshold: number; value_cents?: number }
+  follow_ups?: { late: number; today: number; suggestions: number }
+  money?: {
+    revenue_month_cents: number
+    net_profit_month_cents: number
+    avg_basket_cents: number | null
+    in_progress_cents: number
+    to_collect_cents: number
+    to_pay_cents: number
+  }
+}
+export type SalesReport = {
+  from: string
+  to: string
+  days: { date: string; orders: number; confirmed: number; cancelled: number; delivered: number; units: number; revenue_cents: number }[]
+  totals: { orders: number; confirmed: number; cancelled: number; decided: number; delivered: number; units: number; revenue_cents: number; avg_basket_cents: number | null; confirmation_rate: number | null }
+  by_source: { source: string; orders: number; confirmed: number }[]
+  by_city: { city: string; delivered: number; revenue_cents: number }[]
+}
+type StockDay = { date: string; on_hand: number; avg_cost_cents: number; value_cents: number }
+export type StockReport = {
+  from: string
+  to: string
+  opening: Omit<StockDay, 'date'>
+  closing: StockDay
+  days: StockDay[]
+  units_in: number
+  units_out: number
+  units_lost: number
+  by_reason: { reason: string; movements: number; units: number }[]
+  ledger_start: string | null
+}
+type DeliveryGroup = { delivered: number; returned: number; return_rate: number | null; avg_delay_days: number | null }
+export type DeliveryReport = {
+  from: string
+  to: string
+  delivered: number
+  returned: number
+  return_rate: number | null
+  avg_delay_days: number | null
+  median_delay_days: number | null
+  by_carrier: (DeliveryGroup & { carrier: string })[]
+  by_city: (DeliveryGroup & { city: string })[]
+}
+type MarginRow = {
+  delivered: number
+  revenue_cents: number
+  cogs_cents: number
+  carrier_fees_cents: number
+  gross_margin_cents: number
+  expenses_cents: number
+  write_offs_cents: number
+  net_profit_cents: number
+}
+export type MarginReport = { from: string; to: string; days: (MarginRow & { date: string })[]; totals: MarginRow }
+export type ClosingReport = {
+  month: string
+  from: string
+  to: string
+  complete: boolean
+  generated_at: string
+  orders: { created: number; by_status: Record<string, number> }
+  pnl: FinanceReport['pnl']
+  counts: FinanceReport['counts']
+  expenses_by_category: FinanceReport['expenses_by_category']
+  cash: { in_cents: number; out_expenses_cents: number; out_suppliers_cents: number; net_cents: number }
+  stock: StockDay
+  receivables_cents: number
+  debts_cents: number
+}
+export type ReportName = 'sales' | 'stock' | 'delivery' | 'margin'
+type ReportOf = { sales: SalesReport; stock: StockReport; delivery: DeliveryReport; margin: MarginReport }
+
 export type Supplier = { id: number; name: string; phone: string; city: string; note: string; active: boolean; created_at: string }
 export type POStatus = 'draft' | 'ordered' | 'partially_received' | 'received' | 'cancelled'
 export type PurchaseOrder = {
@@ -473,6 +557,11 @@ export const adminApi = {
   editTask: (id: number, b: { done?: boolean; due_at?: string; title?: string; assigned_to?: string }) =>
     call<Task>(`/tasks/${id}`, { method: 'PATCH', body: b }),
   team: () => call<{ names: string[] }>('/team'),
+  dashboard: () => call<Dashboard>('/dashboard'),
+  report: <N extends ReportName>(name: N, p: Period) => call<ReportOf[N]>(`/reports/${name}?${periodQuery(p)}`),
+  reportCsvUrl: (name: ReportName, p: Period) => `/bot-api/admin/reports/${name}.csv?${periodQuery(p)}`,
+  closing: (month: string) => call<ClosingReport>(`/reports/closing?month=${encodeURIComponent(month)}`),
+  closingCsvUrl: (month: string) => `/bot-api/admin/reports/closing.csv?month=${encodeURIComponent(month)}`,
   carriers: (includeInactive = false) => call<{ items: Carrier[] }>(`/carriers${includeInactive ? '?include_inactive=true' : ''}`),
   createCarrier: (b: CarrierInput) => call<Carrier>('/carriers', { method: 'POST', body: b }),
   editCarrier: (id: number, b: Partial<CarrierInput>) => call<Carrier>(`/carriers/${id}`, { method: 'PATCH', body: b }),
