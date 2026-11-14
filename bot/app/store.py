@@ -145,7 +145,9 @@ class Store:
     # -- schema versions -----------------------------------------------------------------------
     def _read_schema_versions(self) -> dict[str, int]:
         try:
-            rows = self._exec("SELECT key, value FROM settings WHERE key LIKE 'schema:%'", fetch="all")
+            # The pattern is a parameter: a literal '%' in the SQL text is a placeholder error for psycopg,
+            # which used to make this read fail on Postgres and re-run every migration at each cold start.
+            rows = self._exec("SELECT key, value FROM settings WHERE key LIKE ?", ("schema:%",), fetch="all")
         except Exception:  # first start: the settings table doesn't exist yet
             if self.backend == "postgres":
                 self._drop_pg()

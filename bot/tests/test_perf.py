@@ -25,6 +25,9 @@ class FakeCursor:
         return False
 
     def execute(self, sql, params=()):
+        # Like psycopg: with parameters (even an empty tuple), every '%' must be a placeholder.
+        if params is not None and "%" in sql.replace("%s", ""):
+            raise psycopg.ProgrammingError("only '%s', '%b', '%t' are allowed as placeholders")
         self.conn.statements.append(sql)
         if self.conn.fail_next:
             self.conn.fail_next = False
@@ -65,7 +68,7 @@ def fake_pg(monkeypatch):
 def test_one_connection_reused_and_one_reconnect_on_drop(fake_pg):
     st = Store("postgres", database_url="postgresql://fake")
     assert len(fake_pg) == 1
-    assert len(fake_pg[0].statements) == 1 and "schema:" in fake_pg[0].statements[0]  # 1 query, no DDL
+    assert fake_pg[0].statements == ["SELECT key, value FROM settings WHERE key LIKE %s"]  # 1 query, no DDL
     for _ in range(5):
         st._exec("SELECT 1", fetch="one")
     assert len(fake_pg) == 1  # the same connection for every statement
@@ -92,7 +95,7 @@ def test_schema_runs_once_then_start_up_is_one_query(tmp_path, monkeypatch):
     second = Store("sqlite", sqlite_path=path)
     DbOrders(second)
     Stock(second)
-    assert len(calls) == 1 and "schema:" in calls[0]
+    assert len(calls) == 1 and "FROM settings WHERE key LIKE" in calls[0]
     assert second.needs_schema("store", 3) is False and second.needs_schema("store", 4) is True
 
 

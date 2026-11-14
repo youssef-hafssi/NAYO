@@ -88,8 +88,14 @@ def create_app(services: Services | None = None, settings: Settings | None = Non
 
     @asynccontextmanager
     async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
-        svc()  # fail fast on bad configuration
-        log.info("NAYO bot ready (state=%s, model=%s, graph=%s)", settings.state_backend, settings.gemini_model, settings.graph_api_version)
+        try:
+            svc()
+            log.info("NAYO bot ready (state=%s, model=%s, graph=%s)", settings.state_backend, settings.gemini_model,
+                     settings.graph_api_version)
+        except Exception as e:
+            # A database hiccup at cold start (slow / refusing pooler) must not kill the whole function: the next
+            # request builds the services again, and /health answers 503 until the database is back.
+            log.error("start-up failed, will retry on the next request: %s: %s", type(e).__name__, str(e)[:300])
         yield
 
     app = FastAPI(title="NAYO WhatsApp bot", docs_url=None, redoc_url=None, openapi_url=None, lifespan=lifespan)
@@ -102,9 +108,13 @@ def create_app(services: Services | None = None, settings: Settings | None = Non
     )
 
     @app.get("/health")
-    def health() -> dict[str, Any]:
+    def health() -> Any:
         # Also touches the database, so uptime pings keep a free Supabase project from pausing.
-        return {"ok": True, "db": svc().store.ping()}
+        try:
+            return {"ok": True, "db": svc().store.ping()}
+        except Exception as e:
+            log.error("health: services unavailable: %s", type(e).__name__)
+            return JSONResponse({"ok": False, "db": False}, status_code=503)
 
     @app.post("/orders", response_model=OrderOut)
     async def post_order(request: Request) -> Any:

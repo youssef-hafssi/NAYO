@@ -157,3 +157,16 @@ def say_db():
         bot.handle(IncomingMessage(f"wamid.{next(_ids)}", sender, type_, text))
 
     return _say
+
+
+@pytest.fixture(autouse=True)
+def _no_literal_percent_in_sql(monkeypatch):
+    """Postgres (psycopg) reads '%' as a placeholder: a literal '%' in SQL text breaks there even though SQLite
+    accepts it. LIKE patterns must be passed as parameters. Checked on every statement the tests send."""
+    orig = Store._run
+
+    def run(self, cur, sql, params, fetch):
+        assert "%" not in sql, f"literal % in SQL (use a ? parameter): {sql[:120]}"
+        return orig(self, cur, sql, params, fetch)
+
+    monkeypatch.setattr(Store, "_run", run)
