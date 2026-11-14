@@ -38,7 +38,7 @@ CLOSED_LIKE = ("cancelled", "returned")
 EXTRA_COLUMNS = ["carrier", "tracking", "delivered_at", "return_reason", "source", "internal_note", "shipped_at",
                  # delivery & cash on delivery (see delivery.py)
                  "carrier_id", "carrier_fee_cents", "cod_status", "cod_amount_cents", "remittance_id",
-                 "returned_at"]
+                 "returned_at", "confirmed_at"]
 ALL_COLUMNS = HEADERS + EXTRA_COLUMNS
 
 
@@ -195,7 +195,7 @@ class DbOrders:
     Same columns as the Google Sheet. View/edit them in Supabase → Table Editor → orders.
     """
 
-    SCHEMA_VERSION = 4  # bump when columns / indexes below change
+    SCHEMA_VERSION = 5  # bump when columns / indexes below change
 
     def __init__(self, store: Any):
         self.store = store
@@ -248,6 +248,8 @@ class DbOrders:
         if unknown:
             raise ValueError(f"unknown columns: {unknown}")
         fields["updated_at"] = now_local()
+        if fields.get("status") == "confirmed" and "confirmed_at" not in fields:
+            fields["confirmed_at"] = fields["updated_at"]  # follow-ups: "confirmed but not shipped after 48 h"
         sets = ", ".join(f"{k} = ?" for k in fields)  # keys whitelisted above
         self.store._exec(
             f"UPDATE orders SET {sets} WHERE UPPER(order_number) = UPPER(?)", (*[str(v) for v in fields.values()], order_number)

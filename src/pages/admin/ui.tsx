@@ -1,4 +1,4 @@
-import { useEffect, useRef, type ReactNode } from 'react'
+import { useEffect, useRef, useState, type ReactNode } from 'react'
 import type { Filter, Status } from '../../lib/adminApi'
 
 /* Shared admin UI: palette, status labels, small components. Moved from the original Admin.tsx. */
@@ -213,3 +213,34 @@ export const parseMad = (v: string) => {
   return /^\d+(\.\d{1,2})?$/.test(t) ? Number(t) : NaN
 }
 export const fmtDate = (s: string | null | undefined) => (s ? s.slice(0, 10).split('-').reverse().join('/') : '—')
+
+export const SEGMENT_LABEL: Record<string, string> = { new: 'Nouveau', loyal: 'Fidèle', at_risk: 'À risque', inactive: 'Inactif' }
+export const SEGMENT_PILL: Record<string, string> = {
+  new: 'bg-[#eef2fb] text-[#3b5bab]',
+  loyal: 'bg-[#dff3e6] text-[#17703c]',
+  at_risk: 'bg-[#fbe5e5] text-[#a12a2a]',
+  inactive: 'bg-[#efefef] text-[#6b6b6b]',
+}
+
+/** Success / error line under a page title. */
+export function Banner({ msg }: { msg: { kind: 'ok' | 'error'; text: string } | null }) {
+  if (!msg) return null
+  return (
+    <p
+      role={msg.kind === 'error' ? 'alert' : 'status'}
+      className={`mt-12 r-8 px-12 py-8 fs-13 ${msg.kind === 'error' ? 'bg-[#fbe5e5] text-[#a12a2a]' : 'bg-[#e7f6ec] text-[#1f6a3c]'}`}
+    >
+      {msg.text}
+    </p>
+  )
+}
+
+/** Value that only changes after `ms` without new input (search boxes). */
+export function useDebounced<T>(value: T, ms = 300): T {
+  const [v, setV] = useState(value)
+  useEffect(() => {
+    const id = window.setTimeout(() => setV(value), ms)
+    return () => window.clearTimeout(id)
+  }, [value, ms])
+  return v
+}

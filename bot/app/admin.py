@@ -286,7 +286,7 @@ def build_admin_router(svc: Callable[[], Any], settings: Any) -> APIRouter:
             store.update_conv(p, admin_read_at=max(time.time(), newest))
         return {
             "conversation": {"phone": p, "taken_over_by": conv.taken_over_by, "internal_notes": conv.internal_notes or "",
-                             **_window(conv)},
+                             "opted_out": router.crm().opted_out(p), **_window(conv)},  # type: ignore[attr-defined]
             "order": _order_view(_order_for(conv, p)),
             "messages": messages,
         }
@@ -411,8 +411,13 @@ def build_admin_router(svc: Callable[[], Any], settings: Any) -> APIRouter:
         moves = stock.order_movements(o["order_number"]) if stock is not None else []
         if admin.get("role") != "owner":
             moves = [{k: v for k, v in m.items() if "cost" not in k} for m in moves]
+        crm = router.crm()  # type: ignore[attr-defined]
+        c = crm.get_customer(o["phone"]) if o.get("phone") else None
+        thread = svc().store.thread(o["phone"])[-6:] if o.get("phone") else []
         return {"order": _full_order(o, admin), "history": history, "last_modified": edits[0] if edits else None,
-                "stock_movements": moves}
+                "stock_movements": moves, "thread": thread,
+                "customer": {"orders_count": c["orders_count"], "returned": c["returned"], "cancelled": c["cancelled"],
+                             "segment": c["segment"], "opted_out": c["opted_out"], "tags": c["tags"]} if c else None}
 
     @router.patch("/orders/{order_number}")
     def edit_order(order_number: str, body: OrderEditIn, admin: dict = Depends(current_admin)) -> dict[str, Any]:
@@ -473,4 +478,7 @@ def build_admin_router(svc: Callable[[], Any], settings: Any) -> APIRouter:
     from .admin_finance import add_finance_routes
 
     add_finance_routes(router, svc, owner_only, _audit, delivery)
+    from .admin_crm import add_crm_routes
+
+    add_crm_routes(router, svc, current_admin, owner_only, _audit, delivery, apply_status, _update_order)
     return router

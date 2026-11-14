@@ -1,7 +1,9 @@
+import { useCallback, useEffect, useState } from 'react'
 import { NavLink, Outlet } from 'react-router-dom'
-import { MessageSquare, MoreHorizontal, Package, ShoppingCart, Truck, Wallet, type LucideIcon } from 'lucide-react'
+import { BellRing, ClipboardList, MessageSquare, MoreHorizontal, Package, ShoppingCart, Truck, Users, Wallet, type LucideIcon } from 'lucide-react'
+import { adminApi } from '../../lib/adminApi'
 import { useAuth } from './AdminApp'
-import { WINE } from './ui'
+import { usePolling, WINE } from './ui'
 
 /*
  * Admin shell: a narrow icon rail on the left from 768px, a bottom tab bar on phones.
@@ -12,6 +14,9 @@ type NavItem = { to: string; label: string; icon: LucideIcon; ownerOnly?: boolea
 
 export const NAV: NavItem[] = [
   { to: '/admin/inbox', label: 'Inbox', icon: MessageSquare },
+  { to: '/admin/orders', label: 'Commandes', icon: ClipboardList },
+  { to: '/admin/follow-ups', label: 'Relances', icon: BellRing },
+  { to: '/admin/customers', label: 'Clients', icon: Users },
   { to: '/admin/delivery', label: 'Livraisons', icon: Truck },
   { to: '/admin/stock', label: 'Stock', icon: Package },
   { to: '/admin/purchasing', label: 'Achats', icon: ShoppingCart, ownerOnly: true },
@@ -19,9 +24,32 @@ export const NAV: NavItem[] = [
   { to: '/admin/plus', label: 'Plus', icon: MoreHorizontal },
 ]
 
+/** Red badge on "Relances": late + today's follow-ups + open suggestions (every 60 s, and on demand). */
+function useTaskBadge(): number {
+  const [n, setN] = useState(0)
+  const load = useCallback(
+    () =>
+      adminApi
+        .taskCounts()
+        .then((c) => setN(c.badge))
+        .catch(() => undefined),
+    [],
+  )
+  useEffect(() => {
+    load()
+    window.addEventListener('nayo:tasks', load)
+    return () => window.removeEventListener('nayo:tasks', load)
+  }, [load])
+  usePolling(load, 60000, true)
+  return n
+}
+
 export default function Layout() {
   const { me } = useAuth()
-  const items = NAV.filter((i) => !i.ownerOnly || me.role === 'owner')
+  const badge = useTaskBadge()
+  const items = NAV.filter((i) => !i.ownerOnly || me.role === 'owner').map((i) =>
+    i.to === '/admin/follow-ups' ? { ...i, badge } : i,
+  )
   // Phones: 4 tabs + "Plus" (the Plus page lists the other screens).
   const more = items[items.length - 1]
   const phoneItems = items.length > 5 ? [...items.slice(0, 4), more] : items
@@ -29,7 +57,7 @@ export default function Layout() {
   return (
     <div className="flex h-[100dvh] flex-col bg-white text-[#1a1a1a] md:flex-row">
       {/* Desktop / tablet: icon rail */}
-      <nav aria-label="Navigation" className="hidden w-76 shrink-0 flex-col items-center gap-4 border-r border-[#e8e8e8] bg-[#fbf8f6] py-12 md:flex">
+      <nav aria-label="Navigation" className="hidden w-76 shrink-0 flex-col items-center gap-4 overflow-y-auto border-r border-[#e8e8e8] bg-[#fbf8f6] py-12 md:flex">
         <span className="mb-10 font-serif fs-15 font-semibold tracking-[0.18em]" style={{ color: WINE }}>
           N
         </span>
@@ -47,7 +75,7 @@ export default function Layout() {
             {i.label}
             {i.badge ? (
               <span className="absolute right-8 top-4 grid h-16 min-w-16 place-items-center rounded-pill bg-[#d93b54] px-4 fs-10 font-bold text-white">
-                {i.badge}
+                {i.badge > 99 ? '99+' : i.badge}
               </span>
             ) : null}
           </NavLink>

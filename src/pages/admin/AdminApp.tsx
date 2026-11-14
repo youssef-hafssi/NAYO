@@ -11,6 +11,10 @@ const Stock = lazy(() => import('./Stock'))
 const Purchasing = lazy(() => import('./Purchasing'))
 const Delivery = lazy(() => import('./Delivery'))
 const Finance = lazy(() => import('./Finance'))
+const Orders = lazy(() => import('./Orders'))
+const Customers = lazy(() => import('./Customers'))
+const CustomerDetail = lazy(() => import('./CustomerDetail'))
+const FollowUps = lazy(() => import('./FollowUps'))
 const DeliveryPrint = lazy(() => import('./DeliveryPrint'))
 const PurchaseOrderDetail = lazy(() => import('./PurchaseOrderDetail'))
 
@@ -77,6 +81,16 @@ export default function AdminApp() {
         <Route element={<Layout />}>
           <Route index element={<Navigate to="inbox" replace />} />
           <Route path="inbox" element={<Inbox onLogout={logout} />} />
+          {(
+            [
+              ['orders', <Orders />],
+              ['customers', <Customers />],
+              ['customers/:phone', <CustomerDetail />],
+              ['follow-ups', <FollowUps />],
+            ] as const
+          ).map(([path, el]) => (
+            <Route key={path} path={path} element={<Suspense fallback={null}>{el}</Suspense>} />
+          ))}
           <Route
             path="orders/:number"
             element={

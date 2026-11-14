@@ -476,6 +476,11 @@ export default function Inbox({ onLogout }: { onLogout: () => void }) {
               </div>
 
               <div className={`flex min-h-0 flex-1 flex-col transition-opacity ${threadLoading ? 'pointer-events-none opacity-50' : ''}`}>
+                {conv.opted_out && (
+                  <div className="flex min-h-34 shrink-0 items-center gap-8 bg-[#efefef] px-16 py-8 fs-12.5 font-semibold text-[#4a4a4a] md:px-24 md:py-0">
+                    Ce client a écrit STOP : il ne souhaite plus recevoir de messages. Répondez seulement s'il vous écrit.
+                  </div>
+                )}
                 {conv.window_open && conv.window_expires_at ? (
                   <div className="flex min-h-34 shrink-0 items-center gap-8 bg-[#fdf1dc] px-16 py-8 fs-12.5 text-[#a0610f] md:px-24 md:py-0">
                     <Clock className="size-14 shrink-0" strokeWidth={2} aria-hidden />

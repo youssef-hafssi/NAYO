@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useState, type FormEvent } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
-import { ArrowLeft, MessageSquare } from 'lucide-react'
-import { adminApi, Unauthorized, type AuditEntry, type FullOrder, type OrderEdit, type SettableStatus, type StockMovement, type Carrier } from '../../lib/adminApi'
+import { AlertTriangle, ArrowLeft, MessageSquare, User } from 'lucide-react'
+import { adminApi, Unauthorized, type AuditEntry, type FullOrder, type OrderEdit, type SettableStatus, type StockMovement, type Carrier, type Message, type OrderCustomer } from '../../lib/adminApi'
 import { useAuth } from './AdminApp'
-import { BusyButton, Chip, FieldLabel, fmtDateTime, fmtMoney, formatPhone, inputClass, parseMad, Pill, StatusPill, STOCK_REASON, withStockConfirm } from './ui'
+import { BusyButton, Chip, FieldLabel, fmtDateTime, hhmm, Pill, SEGMENT_LABEL, SEGMENT_PILL, fmtMoney, formatPhone, inputClass, parseMad, StatusPill, STOCK_REASON, withStockConfirm } from './ui'
 
 /* Order detail: every editable field (each change audited), status changes, history. */
 
@@ -57,6 +57,8 @@ export default function OrderDetail() {
   const [returnReason, setReturnReason] = useState('')
   const [recoverable, setRecoverable] = useState(true)
   const [moves, setMoves] = useState<StockMovement[]>([])
+  const [thread, setThread] = useState<Message[]>([])
+  const [customer, setCustomer] = useState<OrderCustomer | null>(null)
   const [message, setMessage] = useState<{ kind: 'ok' | 'error'; text: string } | null>(null)
   const [notFound, setNotFound] = useState(false)
 
@@ -76,6 +78,8 @@ export default function OrderDetail() {
       setHistory(r.history)
       setLastModified(r.last_modified)
       setMoves(r.stock_movements ?? [])
+      setThread(r.thread ?? [])
+      setCustomer(r.customer ?? null)
       setFee(r.order.carrier_fee_cents ? (Number(r.order.carrier_fee_cents) / 100).toString().replace('.', ',') : '')
     } catch (e) {
       if (e instanceof Error && /not found|404/.test(e.message)) setNotFound(true)
@@ -226,6 +230,29 @@ export default function OrderDetail() {
         </p>
       )}
 
+      {customer && (
+        <div className="mt-10 flex flex-wrap items-center gap-8">
+          <Link
+            to={`/admin/customers/${order.phone}`}
+            className="inline-flex h-40 items-center gap-6 r-10 border border-[#e2d6d0] bg-white px-12 fs-13 font-semibold"
+          >
+            <User className="size-16" aria-hidden /> Fiche client · {customer.orders_count} commande{customer.orders_count > 1 ? 's' : ''}
+          </Link>
+          <Pill className={SEGMENT_PILL[customer.segment]}>{SEGMENT_LABEL[customer.segment]}</Pill>
+          {customer.returned > 0 && (
+            <span className="inline-flex items-center gap-4 r-5 bg-[#fbe5e5] px-8 py-2 fs-12 font-semibold text-[#a12a2a]">
+              <AlertTriangle className="size-14" aria-hidden /> A déjà retourné {customer.returned} commande{customer.returned > 1 ? 's' : ''}
+            </span>
+          )}
+          {customer.opted_out && <Pill className="bg-[#efefef] text-[#6b6b6b]">A écrit STOP</Pill>}
+          {customer.tags.map((t) => (
+            <Pill key={t} className="bg-[#f4eeeb] text-[#3a0a10]">
+              {t}
+            </Pill>
+          ))}
+        </div>
+      )}
+
       {message && (
         <p role={message.kind === 'error' ? 'alert' : 'status'} className={`mt-12 r-8 px-12 py-8 fs-13 ${message.kind === 'error' ? 'bg-[#fbe5e5] text-[#a12a2a]' : 'bg-[#e7f6ec] text-[#1f6a3c]'}`}>
           {message.text}
@@ -374,6 +401,35 @@ export default function OrderDetail() {
                 <span className="text-[#8a8a8a]">{fmtDateTime(h.at)}</span>
                 <span className="font-semibold">{h.admin_name}</span>
                 <span className="min-w-0 break-words">{h.details || h.action}</span>
+              </li>
+            ))}
+          </ul>
+        )}
+      </section>
+      {/* Conversation preview */}
+      <section className="mt-24">
+        <div className="flex items-center justify-between gap-10">
+          <FieldLabel>Derniers messages</FieldLabel>
+          <Link to={`/admin/inbox?phone=${order.phone}`} className="fs-13 font-semibold text-[#7a1a2a] underline">
+            Ouvrir dans l'inbox
+          </Link>
+        </div>
+        {thread.length === 0 ? (
+          <p className="mt-8 fs-13 text-[#8a8a8a]">Aucun message WhatsApp avec ce numéro.</p>
+        ) : (
+          <ul className="mt-8 space-y-6 r-12 bg-[#f8f4f1] p-12">
+            {thread.map((m, i) => (
+              <li key={`${m.at}-${i}`} className={`flex ${m.role === 'client' ? 'justify-start' : 'justify-end'}`}>
+                <p
+                  className={`max-w-[85%] whitespace-pre-wrap break-words r-10 px-10 py-6 fs-13 ${
+                    m.role === 'client' ? 'bg-white' : m.role === 'agent' ? 'bg-[#f1e3e5]' : 'bg-[#e9efe9]'
+                  }`}
+                >
+                  <span className="mr-6 fs-11 font-semibold text-[#8a8a8a]">
+                    {m.role === 'client' ? 'Client' : m.role === 'agent' ? m.agent_name || 'Équipe' : 'Bot'} · {hhmm(m.at)}
+                  </span>
+                  {m.text.length > 280 ? m.text.slice(0, 280) + '…' : m.text}
+                </p>
               </li>
             ))}
           </ul>

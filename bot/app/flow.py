@@ -71,6 +71,7 @@ class Bot:
         self.max_replies = max_replies_per_hour
         self.history_size = history_size
         self.clock = clock
+        self._crm: Any = None  # customers (STOP / START), created on first use
 
     # ------------------------------------------------------------------ entry point
     def handle(self, msg: IncomingMessage) -> None:
@@ -93,6 +94,19 @@ class Bot:
         if self.owner and phone == self.owner:
             log.info("owner message received — owner alerts can be delivered for the next 24h")
             return
+
+        if text and len(text) <= 20:
+            from .crm import Crm
+
+            if self._crm is None or self._crm.store is not self.store:
+                self._crm = Crm(self.store)
+            kw = self._crm.handle_keyword(phone, text)
+            if kw == "stop":
+                # The client asked us to stop writing: flagged on the customer, no reply (the team sees it).
+                log.info("%s opted out (STOP)", _mask(phone))
+                return
+            if kw == "start":
+                log.info("%s opted back in", _mask(phone))
 
         conv = self.store.get_conv(phone)
         if conv.taken_over_by:

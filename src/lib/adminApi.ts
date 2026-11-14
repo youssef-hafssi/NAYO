@@ -219,6 +219,90 @@ export type FinanceReport = {
 export const periodQuery = (p: Period) =>
   p.preset ? `preset=${p.preset}` : `frm=${encodeURIComponent(p.frm ?? '')}&to=${encodeURIComponent(p.to ?? '')}`
 
+export type OrderCustomer = { orders_count: number; returned: number; cancelled: number; segment: Segment; opted_out: boolean; tags: string[] }
+export type OrderRow = {
+  order_number: string
+  created_at: string
+  name: string
+  phone: string
+  city: string
+  quantity: string
+  total: string
+  status: Status
+  carrier: string
+  carrier_id: string
+  source: string
+  delivered_at: string
+  cod_status: string
+  tracking: string
+  returns_count: number
+  opted_out: boolean
+}
+export type OrderFilters = {
+  q?: string
+  status?: string[]
+  frm?: string
+  to?: string
+  city?: string
+  carrier_id?: string
+  source?: string
+  sort?: string
+  dir?: 'asc' | 'desc'
+}
+export type Segment = 'new' | 'loyal' | 'at_risk' | 'inactive'
+export type Customer = {
+  phone: string
+  name: string
+  city: string
+  address: string
+  tags: string[]
+  internal_note: string
+  opted_out: boolean
+  orders_count: number
+  delivered: number
+  delivered_cents?: number // owner only
+  returned: number
+  cancelled: number
+  last_order: string
+  segment: Segment
+}
+export type CustomerOrder = {
+  order_number: string
+  created_at: string
+  quantity: string
+  total: string
+  status: Status
+  city: string
+  carrier: string
+  delivered_at: string
+  return_reason: string
+  source: string
+}
+export type Task = {
+  id: number
+  created_at: string
+  due_at: string
+  done_at: string
+  customer_phone: string
+  order_number: string
+  title: string
+  assigned_to: string
+  created_by: string
+  suggestion_key: string | null
+  dismissed: boolean
+}
+export type Suggestion = { key: string; kind: string; title: string; customer_phone: string; order_number: string; since: string }
+export type TaskView = 'today' | 'late' | 'upcoming' | 'done'
+export type TaskCounts = { late: number; today: number; upcoming: number; suggestions: number; badge: number }
+
+const qs = (o: Record<string, string | number | undefined>) =>
+  Object.entries(o)
+    .filter(([, v]) => v !== undefined && v !== '')
+    .map(([k, v]) => `${k}=${encodeURIComponent(String(v))}`)
+    .join('&')
+const orderQs = (f: OrderFilters) =>
+  qs({ q: f.q, status: f.status?.join(','), frm: f.frm, to: f.to, city: f.city, carrier_id: f.carrier_id, source: f.source, sort: f.sort, dir: f.dir })
+
 export type Supplier = { id: number; name: string; phone: string; city: string; note: string; active: boolean; created_at: string }
 export type POStatus = 'draft' | 'ordered' | 'partially_received' | 'received' | 'cancelled'
 export type PurchaseOrder = {
@@ -290,6 +374,7 @@ export type Thread = {
     internal_notes: string
     window_open: boolean
     window_expires_at: number | null
+    opted_out?: boolean
   }
   order: Order | null
   messages: Message[]
@@ -316,7 +401,14 @@ export const adminApi = {
   changePassword: (current: string, next: string) =>
     call('/me/password', { method: 'POST', body: { current, new: next } }),
   getOrder: (n: string) =>
-    call<{ order: FullOrder; history: AuditEntry[]; last_modified: AuditEntry | null; stock_movements: StockMovement[] }>(
+    call<{
+      order: FullOrder
+      history: AuditEntry[]
+      last_modified: AuditEntry | null
+      stock_movements: StockMovement[]
+      thread: Message[]
+      customer: OrderCustomer | null
+    }>(
       `/orders/${encodeURIComponent(n)}`,
     ),
   editOrder: (n: string, edit: OrderEdit & { force?: boolean; carrier_id?: number; carrier_fee?: number }) =>
@@ -356,6 +448,31 @@ export const adminApi = {
   deleteExpense: (id: number) => call(`/expenses/${id}`, { method: 'DELETE' }),
   financeReport: (p: Period) => call<FinanceReport>(`/finance/report?${periodQuery(p)}`),
   financeExportUrl: (p: Period) => `/bot-api/admin/finance/export?${periodQuery(p)}`,
+  orders: (f: OrderFilters, offset = 0) =>
+    call<{ items: OrderRow[]; has_more: boolean; counts: Record<Status, number>; cities?: string[] }>(
+      `/orders?${orderQs(f)}&limit=50&offset=${offset}`,
+    ),
+  ordersCsvUrl: (f: OrderFilters) => `/bot-api/admin/orders.csv?${orderQs(f)}`,
+  ordersBulk: (b: { order_numbers: string[]; status?: SettableStatus; carrier_id?: number; return_reason?: string }) =>
+    call<{ done: string[]; errors: Record<string, string> }>('/orders/bulk', { method: 'POST', body: b }),
+  customers: (f: { q?: string; segment?: string; tag?: string; sort?: string; dir?: string }, offset = 0) =>
+    call<{ items: Customer[]; has_more: boolean; counts: Record<Segment, number> }>(`/customers?${qs(f)}&limit=50&offset=${offset}`),
+  customersCsvUrl: (f: { q?: string; segment?: string; tag?: string }) => `/bot-api/admin/customers.csv?${qs(f)}`,
+  customer: (phone: string) =>
+    call<{ customer: Customer; orders: CustomerOrder[]; tasks: Task[]; window_open: boolean }>(`/customers/${encodeURIComponent(phone)}`),
+  editCustomer: (phone: string, b: { name?: string; city?: string; address?: string; tags?: string[]; internal_note?: string; opted_out?: boolean }) =>
+    call<{ customer: Customer }>(`/customers/${encodeURIComponent(phone)}`, { method: 'PATCH', body: b }),
+  newCustomerOrder: (phone: string, quantity: number) =>
+    call<{ order_number: string }>(`/customers/${encodeURIComponent(phone)}/orders`, { method: 'POST', body: { quantity } }),
+  tasks: (view: TaskView, offset = 0) =>
+    call<{ items: Task[]; has_more: boolean; suggestions?: Suggestion[] }>(`/tasks?view=${view}&limit=50&offset=${offset}`),
+  taskCounts: () => call<TaskCounts>('/tasks/counts'),
+  addTask: (b: { title?: string; due_at?: string; customer_phone?: string; order_number?: string; assigned_to?: string; suggestion_key?: string }) =>
+    call<Task>('/tasks', { method: 'POST', body: b }),
+  dismissSuggestion: (key: string) => call('/tasks/dismiss', { method: 'POST', body: { key } }),
+  editTask: (id: number, b: { done?: boolean; due_at?: string; title?: string; assigned_to?: string }) =>
+    call<Task>(`/tasks/${id}`, { method: 'PATCH', body: b }),
+  team: () => call<{ names: string[] }>('/team'),
   carriers: (includeInactive = false) => call<{ items: Carrier[] }>(`/carriers${includeInactive ? '?include_inactive=true' : ''}`),
   createCarrier: (b: CarrierInput) => call<Carrier>('/carriers', { method: 'POST', body: b }),
   editCarrier: (id: number, b: Partial<CarrierInput>) => call<Carrier>(`/carriers/${id}`, { method: 'PATCH', body: b }),
