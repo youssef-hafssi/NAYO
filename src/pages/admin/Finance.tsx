@@ -10,7 +10,7 @@ import {
   type Period,
 } from '../../lib/adminApi'
 import { useAuth } from './AdminApp'
-import { BusyButton, Chip, FieldLabel, fmtDate, fmtMoney, inputClass, parseMad } from './ui'
+import { BusyButton, Chip, FieldLabel, fmtDate, fmtMoney, inputClass, parseMad, Skeleton } from './ui'
 
 /*
  * Finance (owner only, server-enforced): results for a period (P&L, marketing, unit economics, cash)
@@ -128,14 +128,14 @@ export default function Finance() {
 /* ------------------------------------------------------------------ Résultats */
 
 function Results({ period, fail }: { period: Period; fail: (e: unknown) => void }) {
-  const [r, setR] = useState<FinanceReport | null>(null)
+  const [r, setR] = useState<FinanceReport | null>(() => adminApi.financeReport(period).peek() ?? null)
   const key = JSON.stringify(period)
 
   useEffect(() => {
     let live = true
-    setR(null)
-    adminApi
-      .financeReport(period)
+    const q = adminApi.financeReport(period)
+    setR(q.peek() ?? null) // seen before this session: shown at once, refreshed below
+    q
       .then((x) => live && setR(x))
       .catch((e) => live && fail(e))
     return () => {
@@ -144,7 +144,7 @@ function Results({ period, fail }: { period: Period; fail: (e: unknown) => void 
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [key])
 
-  if (!r) return <p className="mt-18 fs-14 text-[#8a8a8a]">Chargement…</p>
+  if (!r) return <Skeleton className="mt-14" />
   const { pnl, counts, marketing: m, unit_economics: u, cash } = r
 
   return (
@@ -325,7 +325,9 @@ const emptyDraft = (category = ''): Draft => ({ id: null, date: casaToday(), cat
 function Expenses({ period, fail, setMessage }: { period: Period; fail: (e: unknown) => void; setMessage: (m: Msg) => void }) {
   const [cats, setCats] = useState<ExpenseCategory[]>([])
   const [filter, setFilter] = useState('')
-  const [list, setList] = useState<{ items: Expense[]; has_more: boolean; total_cents: number } | null>(null)
+  const [list, setList] = useState<{ items: Expense[]; has_more: boolean; total_cents: number } | null>(
+    () => adminApi.expenses(period, 0, undefined).peek() ?? null,
+  )
   const [loadingMore, setLoadingMore] = useState(false)
   const [draft, setDraft] = useState<Draft | null>(null)
   const [busy, setBusy] = useState(false)
@@ -354,7 +356,7 @@ function Expenses({ period, fail, setMessage }: { period: Period; fail: (e: unkn
     loadCats()
   }, [loadCats])
   useEffect(() => {
-    setList(null)
+    setList(adminApi.expenses(period, 0, filter || undefined).peek() ?? null)
     load()
   }, [load])
 
@@ -526,7 +528,7 @@ function Expenses({ period, fail, setMessage }: { period: Period; fail: (e: unkn
           )}
         </div>
         {!list ? (
-          <p className="px-16 py-14 fs-14 text-[#8a8a8a]">Chargement…</p>
+          <Skeleton className="p-14" rows={4} />
         ) : list.items.length === 0 ? (
           <p className="px-16 py-14 fs-14 text-[#8a8a8a]">Aucune dépense sur la période.</p>
         ) : (

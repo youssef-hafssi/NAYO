@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState, type FormEvent } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useState, type FormEvent } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import { adminApi, Unauthorized, type PurchaseOrder, type Supplier } from '../../lib/adminApi'
 import { useAuth } from './AdminApp'
@@ -99,6 +99,18 @@ function Orders({ fail, setMessage }: Ctx) {
     }
   }, [query, fail])
 
+  useLayoutEffect(() => {
+    // Seen before this session: shown before the first paint, refreshed by load().
+    const list = query(0).peek()
+    const sum = adminApi.purchasingSummary().peek()
+    const sup = adminApi.suppliers().peek()
+    if (list) {
+      setItems(list.items)
+      setHasMore(list.has_more)
+    }
+    if (sum) setSummary(sum)
+    if (sup) setSuppliers(sup.items)
+  }, [query])
   useEffect(() => {
     load()
   }, [load])

@@ -1,9 +1,9 @@
-import { useCallback, useEffect, useState, type FormEvent } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, type FormEvent } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { AlertTriangle, ArrowLeft, MessageSquare, User } from 'lucide-react'
 import { adminApi, Unauthorized, type AuditEntry, type FullOrder, type OrderEdit, type SettableStatus, type StockMovement, type Carrier, type Message, type OrderCustomer } from '../../lib/adminApi'
 import { useAuth } from './AdminApp'
-import { BusyButton, Chip, FieldLabel, fmtDateTime, hhmm, Pill, SEGMENT_LABEL, SEGMENT_PILL, fmtMoney, formatPhone, inputClass, parseMad, StatusPill, STOCK_REASON, withStockConfirm } from './ui'
+import { BusyButton, Chip, FieldLabel, fmtDateTime, hhmm, Pill, SEGMENT_LABEL, SEGMENT_PILL, fmtMoney, formatPhone, inputClass, parseMad, StatusPill, STOCK_REASON, withStockConfirm, PageSkeleton } from './ui'
 
 /* Order detail: every editable field (each change audited), status changes, history. */
 
@@ -70,22 +70,36 @@ export default function OrderDetail() {
     [logout],
   )
 
-  const load = useCallback(async () => {
-    try {
-      const r = await adminApi.getOrder(number)
-      setOrder(r.order)
-      setForm(toForm(r.order))
-      setHistory(r.history)
+  // The form shown from data: a background refresh only replaces it while it is untouched (never your typing).
+  const shownForm = useRef('')
+  const apply = useCallback((r: Awaited<ReturnType<typeof adminApi.getOrder>>, reset: boolean) => {
+    const next = toForm(r.order)
+    setOrder(r.order)
+    setForm((prev) => {
+      if (!reset && prev && JSON.stringify(prev) !== shownForm.current) return prev
+      shownForm.current = JSON.stringify(next)
+      return next
+    })
+    setHistory(r.history)
       setLastModified(r.last_modified)
       setMoves(r.stock_movements ?? [])
       setThread(r.thread ?? [])
       setCustomer(r.customer ?? null)
-      setFee(r.order.carrier_fee_cents ? (Number(r.order.carrier_fee_cents) / 100).toString().replace('.', ',') : '')
-    } catch (e) {
-      if (e instanceof Error && /not found|404/.test(e.message)) setNotFound(true)
-      else fail(e)
-    }
-  }, [number, fail])
+    setFee(r.order.carrier_fee_cents ? (Number(r.order.carrier_fee_cents) / 100).toString().replace('.', ',') : '')
+  }, [])
+
+  /** reset=false: background refresh (keeps an edited form); true (default): after a save / status change. */
+  const load = useCallback(
+    async (reset = true) => {
+      try {
+        apply(await adminApi.getOrder(number), reset)
+      } catch (e) {
+        if (e instanceof Error && /not found|404/.test(e.message)) setNotFound(true)
+        else fail(e)
+      }
+    },
+    [number, fail, apply],
+  )
 
   useEffect(() => {
     adminApi
@@ -109,9 +123,12 @@ export default function OrderDetail() {
     }
   }
 
-  useEffect(() => {
-    load()
-  }, [load])
+  useLayoutEffect(() => {
+    // Opened before this session: shown before the first paint, then refreshed in the background.
+    const cached = adminApi.getOrder(number).peek()
+    if (cached) apply(cached, true)
+    load(false)
+  }, [number, load, apply])
 
   if (notFound) {
     return (
@@ -123,7 +140,7 @@ export default function OrderDetail() {
       </div>
     )
   }
-  if (!order || !form) return <div className="p-24 fs-14 text-[#8a8a8a]">Chargement…</div>
+  if (!order || !form) return <PageSkeleton tiles={false} />
 
   const set = (k: keyof Form) => (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) =>
     setForm({ ...form, [k]: e.target.value })

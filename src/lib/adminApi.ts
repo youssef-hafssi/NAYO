@@ -1,3 +1,4 @@
+import { bumpEpoch, Query } from './query'
 /*
  * Admin inbox API client. Calls go to /bot-api/admin/* on the website's own origin (forwarded to the bot by
  * vercel.json / the Vite dev proxy), so the HttpOnly session cookie is first-party in every browser.
@@ -464,7 +465,11 @@ export type Thread = {
   messages: Message[]
 }
 
+/** A cacheable GET (see query.ts): awaits like a Promise, keyed by its path. */
+const get = <T,>(path: string) => new Query<T>(path, () => call<T>(path))
+
 async function call<T>(path: string, init?: { method?: string; body?: unknown }): Promise<T> {
+  if (init?.method && init.method !== 'GET') bumpEpoch()
   const res = await fetch(BASE + path, {
     method: init?.method ?? 'GET',
     credentials: 'same-origin',
@@ -481,11 +486,11 @@ export const adminApi = {
   login: (email: string, password: string) =>
     call<{ name: string; email: string }>('/login', { method: 'POST', body: { email, password } }),
   logout: () => call('/logout', { method: 'POST' }),
-  me: () => call<Me>('/me'),
+  me: () => get<Me>('/me'),
   changePassword: (current: string, next: string) =>
     call('/me/password', { method: 'POST', body: { current, new: next } }),
   getOrder: (n: string) =>
-    call<{
+    get<{
       order: FullOrder
       history: AuditEntry[]
       last_modified: AuditEntry | null
@@ -498,8 +503,8 @@ export const adminApi = {
   editOrder: (n: string, edit: OrderEdit & { force?: boolean; carrier_id?: number; carrier_fee?: number }) =>
     call<{ order: FullOrder; changed: string[] }>(`/orders/${encodeURIComponent(n)}`, { method: 'PATCH', body: edit }),
   conversations: (filter: Filter) =>
-    call<{ items: ConversationItem[]; online: number }>(`/conversations?filter=${filter}`),
-  thread: (phone: string) => call<Thread>(`/conversations/${phone}/messages`),
+    get<{ items: ConversationItem[]; online: number }>(`/conversations?filter=${filter}`),
+  thread: (phone: string) => get<Thread>(`/conversations/${phone}/messages`),
   send: (phone: string, text: string) => call(`/conversations/${phone}/send`, { method: 'POST', body: { text } }),
   takeover: (phone: string) => call(`/conversations/${phone}/takeover`, { method: 'POST' }),
   release: (phone: string) => call(`/conversations/${phone}/release`, { method: 'POST' }),
@@ -509,9 +514,9 @@ export const adminApi = {
     status: SettableStatus,
     extra?: { return_reason?: string; force?: boolean; recoverable?: boolean },
   ) => call(`/order/${encodeURIComponent(orderNumber)}/status`, { method: 'POST', body: { status, ...extra } }),
-  stock: () => call<StockSummary>('/stock'),
+  stock: () => get<StockSummary>('/stock'),
   stockMovements: (cursor?: number | null) =>
-    call<{ items: StockMovement[]; next_cursor: number | null }>(`/stock/movements?limit=50${cursor ? `&cursor=${cursor}` : ''}`),
+    get<{ items: StockMovement[]; next_cursor: number | null }>(`/stock/movements?limit=50${cursor ? `&cursor=${cursor}` : ''}`),
   stockOpening: (quantity: number, unit_cost: number) =>
     call<StockSummary>('/stock/opening', { method: 'POST', body: { quantity, unit_cost } }),
   stockRestock: (quantity: number, unit_cost: number, note: string) =>
@@ -519,86 +524,86 @@ export const adminApi = {
   stockAdjust: (new_quantity: number, note: string) =>
     call<StockSummary>('/stock/adjust', { method: 'POST', body: { new_quantity, note } }),
   expenseCategories: (includeInactive = false) =>
-    call<{ items: ExpenseCategory[] }>(`/expense-categories${includeInactive ? '?include_inactive=true' : ''}`),
+    get<{ items: ExpenseCategory[] }>(`/expense-categories${includeInactive ? '?include_inactive=true' : ''}`),
   addCategory: (name: string) => call<ExpenseCategory>('/expense-categories', { method: 'POST', body: { name } }),
   editCategory: (id: number, b: { name?: string; active?: boolean }) =>
     call<ExpenseCategory>(`/expense-categories/${id}`, { method: 'PATCH', body: b }),
   expenses: (p: Period, offset = 0, category?: string) =>
-    call<{ items: Expense[]; has_more: boolean; total_cents: number }>(
+    get<{ items: Expense[]; has_more: boolean; total_cents: number }>(
       `/expenses?${periodQuery(p)}&limit=50&offset=${offset}${category ? `&category=${encodeURIComponent(category)}` : ''}`,
     ),
   addExpense: (b: ExpenseInput) => call<Expense>('/expenses', { method: 'POST', body: b }),
   editExpense: (id: number, b: Partial<ExpenseInput>) => call<Expense>(`/expenses/${id}`, { method: 'PATCH', body: b }),
   deleteExpense: (id: number) => call(`/expenses/${id}`, { method: 'DELETE' }),
-  financeReport: (p: Period) => call<FinanceReport>(`/finance/report?${periodQuery(p)}`),
+  financeReport: (p: Period) => get<FinanceReport>(`/finance/report?${periodQuery(p)}`),
   financeExportUrl: (p: Period) => `/bot-api/admin/finance/export?${periodQuery(p)}`,
   orders: (f: OrderFilters, offset = 0) =>
-    call<{ items: OrderRow[]; has_more: boolean; counts: Record<Status, number>; cities?: string[] }>(
+    get<{ items: OrderRow[]; has_more: boolean; counts: Record<Status, number>; cities?: string[] }>(
       `/orders?${orderQs(f)}&limit=50&offset=${offset}`,
     ),
   ordersCsvUrl: (f: OrderFilters) => `/bot-api/admin/orders.csv?${orderQs(f)}`,
   ordersBulk: (b: { order_numbers: string[]; status?: SettableStatus; carrier_id?: number; return_reason?: string }) =>
     call<{ done: string[]; errors: Record<string, string> }>('/orders/bulk', { method: 'POST', body: b }),
   customers: (f: { q?: string; segment?: string; tag?: string; sort?: string; dir?: string }, offset = 0) =>
-    call<{ items: Customer[]; has_more: boolean; counts: Record<Segment, number> }>(`/customers?${qs(f)}&limit=50&offset=${offset}`),
+    get<{ items: Customer[]; has_more: boolean; counts: Record<Segment, number> }>(`/customers?${qs(f)}&limit=50&offset=${offset}`),
   customersCsvUrl: (f: { q?: string; segment?: string; tag?: string }) => `/bot-api/admin/customers.csv?${qs(f)}`,
   customer: (phone: string) =>
-    call<{ customer: Customer; orders: CustomerOrder[]; tasks: Task[]; window_open: boolean }>(`/customers/${encodeURIComponent(phone)}`),
+    get<{ customer: Customer; orders: CustomerOrder[]; tasks: Task[]; window_open: boolean }>(`/customers/${encodeURIComponent(phone)}`),
   editCustomer: (phone: string, b: { name?: string; city?: string; address?: string; tags?: string[]; internal_note?: string; opted_out?: boolean }) =>
     call<{ customer: Customer }>(`/customers/${encodeURIComponent(phone)}`, { method: 'PATCH', body: b }),
   newCustomerOrder: (phone: string, quantity: number) =>
     call<{ order_number: string }>(`/customers/${encodeURIComponent(phone)}/orders`, { method: 'POST', body: { quantity } }),
   tasks: (view: TaskView, offset = 0) =>
-    call<{ items: Task[]; has_more: boolean; suggestions?: Suggestion[] }>(`/tasks?view=${view}&limit=50&offset=${offset}`),
-  taskCounts: () => call<TaskCounts>('/tasks/counts'),
+    get<{ items: Task[]; has_more: boolean; suggestions?: Suggestion[] }>(`/tasks?view=${view}&limit=50&offset=${offset}`),
+  taskCounts: () => get<TaskCounts>('/tasks/counts'),
   addTask: (b: { title?: string; due_at?: string; customer_phone?: string; order_number?: string; assigned_to?: string; suggestion_key?: string }) =>
     call<Task>('/tasks', { method: 'POST', body: b }),
   dismissSuggestion: (key: string) => call('/tasks/dismiss', { method: 'POST', body: { key } }),
   editTask: (id: number, b: { done?: boolean; due_at?: string; title?: string; assigned_to?: string }) =>
     call<Task>(`/tasks/${id}`, { method: 'PATCH', body: b }),
-  team: () => call<{ names: string[] }>('/team'),
-  dashboard: () => call<Dashboard>('/dashboard'),
-  report: <N extends ReportName>(name: N, p: Period) => call<ReportOf[N]>(`/reports/${name}?${periodQuery(p)}`),
+  team: () => get<{ names: string[] }>('/team'),
+  dashboard: () => get<Dashboard>('/dashboard'),
+  report: <N extends ReportName>(name: N, p: Period) => get<ReportOf[N]>(`/reports/${name}?${periodQuery(p)}`),
   reportCsvUrl: (name: ReportName, p: Period) => `/bot-api/admin/reports/${name}.csv?${periodQuery(p)}`,
-  closing: (month: string) => call<ClosingReport>(`/reports/closing?month=${encodeURIComponent(month)}`),
+  closing: (month: string) => get<ClosingReport>(`/reports/closing?month=${encodeURIComponent(month)}`),
   closingCsvUrl: (month: string) => `/bot-api/admin/reports/closing.csv?month=${encodeURIComponent(month)}`,
-  carriers: (includeInactive = false) => call<{ items: Carrier[] }>(`/carriers${includeInactive ? '?include_inactive=true' : ''}`),
+  carriers: (includeInactive = false) => get<{ items: Carrier[] }>(`/carriers${includeInactive ? '?include_inactive=true' : ''}`),
   createCarrier: (b: CarrierInput) => call<Carrier>('/carriers', { method: 'POST', body: b }),
   editCarrier: (id: number, b: Partial<CarrierInput>) => call<Carrier>(`/carriers/${id}`, { method: 'PATCH', body: b }),
   board: (status: BoardStatus, offset = 0, carrierId?: number) =>
-    call<{ items: BoardOrder[]; has_more: boolean; counts: Record<string, number> }>(
+    get<{ items: BoardOrder[]; has_more: boolean; counts: Record<string, number> }>(
       `/delivery?status=${status}&limit=50&offset=${offset}${carrierId !== undefined ? `&carrier_id=${carrierId}` : ''}`,
     ),
   bulkDelivery: (b: { order_numbers: string[]; carrier_id?: number; status?: 'shipped' | 'delivered' | 'returned'; return_reason?: string; recoverable?: boolean }) =>
     call<{ done: string[]; errors: Record<string, string> }>('/delivery/bulk', { method: 'POST', body: b }),
   slips: (numbers: string[]) =>
-    call<{ items: Slip[]; company: { name: string; address: string; phone: string } }>(`/delivery/slips?numbers=${encodeURIComponent(numbers.join(','))}`),
-  codSummary: () => call<{ carriers: CodCarrier[]; total_cents: number; late_carriers: number }>('/cod/summary'),
-  codPending: (carrierId: number) => call<{ items: CodPending[] }>(`/cod/pending?carrier_id=${carrierId}`),
+    get<{ items: Slip[]; company: { name: string; address: string; phone: string } }>(`/delivery/slips?numbers=${encodeURIComponent(numbers.join(','))}`),
+  codSummary: () => get<{ carriers: CodCarrier[]; total_cents: number; late_carriers: number }>('/cod/summary'),
+  codPending: (carrierId: number) => get<{ items: CodPending[] }>(`/cod/pending?carrier_id=${carrierId}`),
   remit: (b: { carrier_id: number; order_numbers: string[]; amount_received: number; note?: string }) =>
     call<{ id: number; expected_cents: number; amount_received_cents: number; difference_cents: number; orders: number }>('/remittances', {
       method: 'POST',
       body: b,
     }),
-  remittances: (offset = 0) => call<{ items: Remittance[]; has_more: boolean }>(`/remittances?limit=50&offset=${offset}`),
-  returns: (offset = 0) => call<{ items: ReturnRow[]; has_more: boolean }>(`/returns?limit=50&offset=${offset}`),
+  remittances: (offset = 0) => get<{ items: Remittance[]; has_more: boolean }>(`/remittances?limit=50&offset=${offset}`),
+  returns: (offset = 0) => get<{ items: ReturnRow[]; has_more: boolean }>(`/returns?limit=50&offset=${offset}`),
   suppliers: (includeInactive = false) =>
-    call<{ items: Supplier[] }>(`/suppliers${includeInactive ? '?include_inactive=true' : ''}`),
+    get<{ items: Supplier[] }>(`/suppliers${includeInactive ? '?include_inactive=true' : ''}`),
   createSupplier: (b: { name: string; phone?: string; city?: string; note?: string }) =>
     call<Supplier>('/suppliers', { method: 'POST', body: b }),
   editSupplier: (id: number, b: Partial<Omit<Supplier, 'id' | 'created_at'>>) =>
     call<Supplier>(`/suppliers/${id}`, { method: 'PATCH', body: b }),
-  purchasingSummary: () => call<{ debts_cents: number; open: number; late: number }>('/purchasing/summary'),
+  purchasingSummary: () => get<{ debts_cents: number; open: number; late: number }>('/purchasing/summary'),
   purchaseOrders: (q: { status?: string; supplier_id?: number; late?: boolean; offset?: number }) => {
     const p = new URLSearchParams({ limit: '50', offset: String(q.offset ?? 0) })
     if (q.status) p.set('status', q.status)
     if (q.supplier_id) p.set('supplier_id', String(q.supplier_id))
     if (q.late) p.set('late', 'true')
-    return call<{ items: PurchaseOrder[]; has_more: boolean }>(`/purchase-orders?${p}`)
+    return get<{ items: PurchaseOrder[]; has_more: boolean }>(`/purchase-orders?${p}`)
   },
   createPO: (b: POInput) => call<PurchaseOrder>('/purchase-orders', { method: 'POST', body: b }),
   getPO: (id: number) =>
-    call<{ po: PurchaseOrder; receipts: Receipt[]; payments: SupplierPayment[]; supplier: Supplier | null }>(`/purchase-orders/${id}`),
+    get<{ po: PurchaseOrder; receipts: Receipt[]; payments: SupplierPayment[]; supplier: Supplier | null }>(`/purchase-orders/${id}`),
   editPO: (id: number, b: Partial<POInput>) => call<PurchaseOrder>(`/purchase-orders/${id}`, { method: 'PATCH', body: b }),
   setPOStatus: (id: number, status: 'ordered' | 'cancelled') =>
     call<PurchaseOrder>(`/purchase-orders/${id}/status`, { method: 'POST', body: { status } }),

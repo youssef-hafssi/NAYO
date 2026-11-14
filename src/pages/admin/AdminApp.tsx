@@ -1,29 +1,34 @@
-import { createContext, lazy, Suspense, useCallback, useContext, useEffect, useLayoutEffect, useState } from 'react'
+import { createContext, lazy, Suspense, useCallback, useContext, useEffect, useLayoutEffect, useState, type ReactNode } from 'react'
 import { Navigate, Route, Routes } from 'react-router-dom'
 import { adminApi, type Me } from '../../lib/adminApi'
+import { clearCache } from '../../lib/query'
 import Layout from './Layout'
 import Login from './Login'
 import Inbox from './Inbox'
+import { PAGES, preloadAllChunks, setPreloadRole } from './preload'
+import { PageSkeleton } from './ui'
 
-const OrderDetail = lazy(() => import('./OrderDetail'))
-const Account = lazy(() => import('./Account'))
-const Stock = lazy(() => import('./Stock'))
-const Purchasing = lazy(() => import('./Purchasing'))
-const Delivery = lazy(() => import('./Delivery'))
-const Finance = lazy(() => import('./Finance'))
-const Orders = lazy(() => import('./Orders'))
-const Customers = lazy(() => import('./Customers'))
-const CustomerDetail = lazy(() => import('./CustomerDetail'))
-const FollowUps = lazy(() => import('./FollowUps'))
-const Dashboard = lazy(() => import('./Dashboard'))
-const Reports = lazy(() => import('./Reports'))
+const Dashboard = lazy(PAGES.dashboard)
+const Orders = lazy(PAGES.orders)
+const OrderDetail = lazy(PAGES.orderDetail)
+const Customers = lazy(PAGES.customers)
+const CustomerDetail = lazy(PAGES.customerDetail)
+const FollowUps = lazy(PAGES.followUps)
+const Delivery = lazy(PAGES.delivery)
+const Stock = lazy(PAGES.stock)
+const Purchasing = lazy(PAGES.purchasing)
+const PurchaseOrderDetail = lazy(PAGES.purchaseOrder)
+const Finance = lazy(PAGES.finance)
+const Reports = lazy(PAGES.reports)
+const Account = lazy(PAGES.account)
 const ClosingPrint = lazy(() => import('./ClosingPrint'))
 const DeliveryPrint = lazy(() => import('./DeliveryPrint'))
-const PurchaseOrderDetail = lazy(() => import('./PurchaseOrderDetail'))
 
 /*
  * /admin — team back-office. Login first, then nested pages inside the shared layout (sidebar on desktop,
  * bottom tab bar on phones). The role ('owner' | 'agent') only hides UI: the server enforces every rule.
+ * /me is loaded once per session (and again only after a 401 → login). Page data is cached in memory for the
+ * session (src/lib/query.ts) and cleared on logout.
  */
 
 type Auth = { me: Me; refresh: () => void; logout: () => void }
@@ -34,6 +39,9 @@ export function useAuth(): Auth {
   if (!auth) throw new Error('useAuth outside AdminApp')
   return auth
 }
+
+/** A lazily loaded page: the layout stays, a skeleton shows until its code is there (never a blank page). */
+const page = (el: ReactNode, tiles = true) => <Suspense fallback={<PageSkeleton tiles={tiles} />}>{el}</Suspense>
 
 export default function AdminApp() {
   const [state, setState] = useState<'checking' | 'login' | 'in'>('checking')
@@ -54,8 +62,10 @@ export default function AdminApp() {
     adminApi
       .me()
       .then((m) => {
+        setPreloadRole(m.role === 'owner')
         setMe(m)
         setState('in')
+        preloadAllChunks() // every page's code, once the browser is idle
       })
       .catch(() => setState('login'))
   }, [])
@@ -63,103 +73,35 @@ export default function AdminApp() {
   useEffect(refresh, [refresh])
 
   const logout = useCallback(() => {
+    clearCache() // the cache belongs to this session only
     setMe(null)
     setState('login')
   }, [])
 
   if (state === 'checking') return <div className="min-h-screen bg-[#f8f4f1]" />
-  if (state === 'login' || !me) return <Login onDone={refresh} />
+  if (state === 'login' || !me) return <Login onDone={() => (clearCache(), refresh())} />
 
   return (
     <AuthContext.Provider value={{ me, refresh, logout }}>
       <Routes>
-        <Route
-          path="reports/closing/print"
-          element={
-            <Suspense fallback={null}>
-              <ClosingPrint />
-            </Suspense>
-          }
-        />
-        <Route
-          path="delivery/print"
-          element={
-            <Suspense fallback={null}>
-              <DeliveryPrint />
-            </Suspense>
-          }
-        />
+        <Route path="reports/closing/print" element={<Suspense fallback={null}>{<ClosingPrint />}</Suspense>} />
+        <Route path="delivery/print" element={<Suspense fallback={null}>{<DeliveryPrint />}</Suspense>} />
         <Route element={<Layout />}>
           <Route index element={<Navigate to="dashboard" replace />} />
+          <Route path="dashboard" element={page(<Dashboard />)} />
           <Route path="inbox" element={<Inbox onLogout={logout} />} />
-          {(
-            [
-              ['orders', <Orders />],
-              ['customers', <Customers />],
-              ['customers/:phone', <CustomerDetail />],
-              ['follow-ups', <FollowUps />],
-              ['dashboard', <Dashboard />],
-              ['reports', <Reports />],
-            ] as const
-          ).map(([path, el]) => (
-            <Route key={path} path={path} element={<Suspense fallback={null}>{el}</Suspense>} />
-          ))}
-          <Route
-            path="orders/:number"
-            element={
-              <Suspense fallback={null}>
-                <OrderDetail />
-              </Suspense>
-            }
-          />
-          <Route
-            path="stock"
-            element={
-              <Suspense fallback={null}>
-                <Stock />
-              </Suspense>
-            }
-          />
-          <Route
-            path="finance"
-            element={
-              <Suspense fallback={null}>
-                <Finance />
-              </Suspense>
-            }
-          />
-          <Route
-            path="delivery"
-            element={
-              <Suspense fallback={null}>
-                <Delivery />
-              </Suspense>
-            }
-          />
-          <Route
-            path="purchasing"
-            element={
-              <Suspense fallback={null}>
-                <Purchasing />
-              </Suspense>
-            }
-          />
-          <Route
-            path="purchasing/:id"
-            element={
-              <Suspense fallback={null}>
-                <PurchaseOrderDetail />
-              </Suspense>
-            }
-          />
-          <Route
-            path="plus"
-            element={
-              <Suspense fallback={null}>
-                <Account />
-              </Suspense>
-            }
-          />
+          <Route path="orders" element={page(<Orders />, false)} />
+          <Route path="orders/:number" element={page(<OrderDetail />, false)} />
+          <Route path="customers" element={page(<Customers />, false)} />
+          <Route path="customers/:phone" element={page(<CustomerDetail />)} />
+          <Route path="follow-ups" element={page(<FollowUps />, false)} />
+          <Route path="delivery" element={page(<Delivery />, false)} />
+          <Route path="stock" element={page(<Stock />)} />
+          <Route path="purchasing" element={page(<Purchasing />)} />
+          <Route path="purchasing/:id" element={page(<PurchaseOrderDetail />, false)} />
+          <Route path="finance" element={page(<Finance />)} />
+          <Route path="reports" element={page(<Reports />)} />
+          <Route path="plus" element={page(<Account />, false)} />
           <Route path="*" element={<Navigate to="inbox" replace />} />
         </Route>
       </Routes>

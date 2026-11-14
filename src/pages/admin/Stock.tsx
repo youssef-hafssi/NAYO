@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState, type FormEvent } from 'react'
 import { Link } from 'react-router-dom'
 import { adminApi, Unauthorized, type StockMovement, type StockSummary } from '../../lib/adminApi'
 import { useAuth } from './AdminApp'
-import { BusyButton, FieldLabel, fmtDateTime, fmtMoney, inputClass, STOCK_REASON } from './ui'
+import { BusyButton, FieldLabel, fmtDateTime, fmtMoney, inputClass, STOCK_REASON, PageSkeleton } from './ui'
 
 /*
  * Stock (single product). Everyone sees units; costs, value and every write are owner-only (server-enforced).
@@ -14,9 +14,10 @@ type Mode = null | 'restock' | 'adjust'
 export default function Stock() {
   const { me, logout } = useAuth()
   const owner = me.role === 'owner'
-  const [summary, setSummary] = useState<StockSummary | null>(null)
-  const [moves, setMoves] = useState<StockMovement[]>([])
-  const [cursor, setCursor] = useState<number | null>(null)
+  // Last data of this session, shown at once (stale-while-revalidate).
+  const [summary, setSummary] = useState<StockSummary | null>(() => adminApi.stock().peek() ?? null)
+  const [moves, setMoves] = useState<StockMovement[]>(() => adminApi.stockMovements().peek()?.items ?? [])
+  const [cursor, setCursor] = useState<number | null>(() => adminApi.stockMovements().peek()?.next_cursor ?? null)
   const [mode, setMode] = useState<Mode>(null)
   const [busy, setBusy] = useState(false)
   const [message, setMessage] = useState<{ kind: 'ok' | 'error'; text: string } | null>(null)
@@ -24,7 +25,7 @@ export default function Stock() {
   const [cost, setCost] = useState('')
   const [note, setNote] = useState('')
   const [confirmAdjust, setConfirmAdjust] = useState(false)
-  const [threshold, setThreshold] = useState('')
+  const [threshold, setThreshold] = useState(() => String(adminApi.stock().peek()?.low_threshold ?? ''))
 
   const fail = useCallback(
     (e: unknown) => {
@@ -124,7 +125,7 @@ export default function Stock() {
     run(() => adminApi.stockThreshold(v), 'Seuil enregistré.')
   }
 
-  if (!summary) return <div className="p-24 fs-14 text-[#8a8a8a]">Chargement…</div>
+  if (!summary) return <PageSkeleton />
 
   return (
     <div className="mx-auto w-full max-w-960 px-16 py-16 md:px-24 md:py-24">

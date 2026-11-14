@@ -1,22 +1,9 @@
-import { useCallback, useEffect, useState, type FormEvent } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, type FormEvent } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { ArrowLeft } from 'lucide-react'
 import { adminApi, Unauthorized, type PurchaseOrder, type Receipt, type Supplier, type SupplierPayment } from '../../lib/adminApi'
 import { useAuth } from './AdminApp'
-import {
-  BusyButton,
-  FieldLabel,
-  fmtDate,
-  fmtDateTime,
-  fmtMoney,
-  inputClass,
-  METHOD_LABEL,
-  parseMad,
-  PAYMENT_LABEL,
-  Pill,
-  PO_STATUS_LABEL,
-  PO_STATUS_PILL,
-} from './ui'
+import { BusyButton, FieldLabel, fmtDate, fmtDateTime, fmtMoney, inputClass, METHOD_LABEL, parseMad, PAYMENT_LABEL, Pill, PO_STATUS_LABEL, PO_STATUS_PILL, PageSkeleton } from './ui'
 
 /* One purchase order: amounts, "Réceptionner" (stock entry at the landed cost), "Enregistrer un paiement". */
 
@@ -44,6 +31,14 @@ export default function PurchaseOrderDetail() {
     [logout],
   )
 
+  const apply = useCallback((r: Awaited<ReturnType<typeof adminApi.getPO>>) => {
+    setPo(r.po)
+    setSupplier(r.supplier)
+    setReceipts(r.receipts)
+    setPayments(r.payments)
+  }, [])
+  const shownExpected = useRef('')
+
   const load = useCallback(async () => {
     try {
       const r = await adminApi.getPO(Number(id))
@@ -52,11 +47,19 @@ export default function PurchaseOrderDetail() {
       setReceipts(r.receipts)
       setPayments(r.payments)
       setExpected(r.po.expected_at ?? '')
+      shownExpected.current = r.po.expected_at ?? ''
     } catch (e) {
       fail(e)
     }
   }, [id, fail])
 
+  useLayoutEffect(() => {
+    const cached = adminApi.getPO(Number(id)).peek() // seen this session: shown before the first paint
+    if (cached) {
+      apply(cached)
+      setExpected(cached.po.expected_at ?? '')
+    }
+  }, [id, apply])
   useEffect(() => {
     load()
   }, [load])
@@ -77,7 +80,7 @@ export default function PurchaseOrderDetail() {
   }
 
   if (me.role !== 'owner') return <div className="p-24 fs-14 text-[#8a8a8a]">Réservé au propriétaire.</div>
-  if (!po) return <div className="p-24 fs-14 text-[#8a8a8a]">{message?.text ?? 'Chargement…'}</div>
+  if (!po) return message ? <div className="p-24 fs-14 text-[#8a8a8a]">{message.text}</div> : <PageSkeleton tiles={false} />
 
   const receive = (e: FormEvent) => {
     e.preventDefault()

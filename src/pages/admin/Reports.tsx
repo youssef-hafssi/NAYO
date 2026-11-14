@@ -14,7 +14,7 @@ import {
 } from '../../lib/adminApi'
 import { useAuth } from './AdminApp'
 import { BarChart } from './Dashboard'
-import { Banner, Chip, FieldLabel, fmtDate, fmtMoney, inputClass, STATUS_LABEL, STOCK_REASON } from './ui'
+import { Banner, Chip, FieldLabel, fmtDate, fmtMoney, inputClass, STATUS_LABEL, STOCK_REASON, Skeleton } from './ui'
 
 /* Rapports (owner only, enforced server-side): Ventes, Stock, Livraisons, Marge par jour, Clôture mensuelle. */
 
@@ -55,9 +55,9 @@ export default function Reports() {
 
   useEffect(() => {
     let live = true
-    setData(null)
     setError(null)
     const run = tab === 'closing' ? (/^\d{4}-\d{2}$/.test(month) ? adminApi.closing(month) : null) : period ? adminApi.report(tab, period) : null
+    setData(run?.peek() ?? null) // seen before this session: shown at once, refreshed below
     run?.then((x) => live && setData(x)).catch((e) => live && fail(e))
     return () => {
       live = false
@@ -139,7 +139,7 @@ export default function Reports() {
 
       <Banner msg={error ? { kind: 'error', text: error } : null} />
       {!data && !error ? (
-        <p className="mt-18 fs-14 text-[#8a8a8a]">Chargement…</p>
+        <Skeleton className="mt-14" />
       ) : data ? (
         <div className="mt-14">
           {tab === 'sales' && <Sales r={data as SalesReport} />}

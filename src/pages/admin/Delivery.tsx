@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useMemo, useState, type FormEvent } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import { Printer } from 'lucide-react'
 import {
@@ -13,7 +13,7 @@ import {
   type ReturnRow,
 } from '../../lib/adminApi'
 import { useAuth } from './AdminApp'
-import { BusyButton, Chip, FieldLabel, fmtDate, fmtDateTime, fmtMoney, formatPhone, inputClass, parseMad, Pill } from './ui'
+import { BusyButton, Chip, FieldLabel, fmtDate, fmtDateTime, fmtMoney, formatPhone, inputClass, parseMad, Pill, Skeleton } from './ui'
 
 /*
  * Livraisons. Everyone: the board (confirmed → shipped → delivered / returned), bulk carrier + status, slips.
@@ -103,6 +103,17 @@ function Board({ fail, setMessage, owner }: { fail: (e: unknown) => void; setMes
     }
   }, [status, fail])
 
+  useLayoutEffect(() => {
+    // This board seen before this session: shown before the first paint, refreshed by load().
+    const b = adminApi.board(status).peek()
+    const c = adminApi.carriers().peek()
+    if (b) {
+      setItems(b.items)
+      setCounts(b.counts)
+      setHasMore(b.has_more)
+    }
+    if (c) setCarriers(c.items)
+  }, [status])
   useEffect(() => {
     load()
   }, [load])
@@ -340,7 +351,7 @@ function Cod({ fail, setMessage }: { fail: (e: unknown) => void; setMessage: (m:
     }
   }
 
-  if (!summary) return <p className="mt-16 fs-14 text-[#8a8a8a]">Chargement…</p>
+  if (!summary) return <Skeleton className="mt-16" rows={4} />
 
   return (
     <>
@@ -453,7 +464,7 @@ function Returns({ fail }: { fail: (e: unknown) => void }) {
       .then((r) => setItems(r.items))
       .catch(fail)
   }, [fail])
-  if (!items) return <p className="mt-16 fs-14 text-[#8a8a8a]">Chargement…</p>
+  if (!items) return <Skeleton className="mt-16" rows={4} />
   const total = items.reduce((s, r) => s + r.loss_cents, 0)
   return (
     <>

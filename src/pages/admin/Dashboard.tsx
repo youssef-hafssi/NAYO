@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState, type ReactNode } from 'react'
 import { Link } from 'react-router-dom'
 import { adminApi, Unauthorized, type Dashboard as Data } from '../../lib/adminApi'
 import { useAuth } from './AdminApp'
-import { Banner, fmtDate, fmtMoney, usePolling, WINE } from './ui'
+import { Banner, fmtDate, fmtMoney, usePolling, WINE, PageSkeleton } from './ui'
 
 /*
  * Tableau de bord. Everyone sees the counts; money (revenue, profit, stock value, cash, debts) is owner-only and
@@ -15,7 +15,7 @@ const mad = (c: number | null | undefined) => (c == null ? '—' : fmtMoney(c).r
 export default function Dashboard() {
   const { me, logout } = useAuth()
   const owner = me.role === 'owner'
-  const [d, setD] = useState<Data | null>(null)
+  const [d, setD] = useState<Data | null>(() => adminApi.dashboard().peek() ?? null) // last data, shown at once
   const [error, setError] = useState<string | null>(null)
 
   const load = useCallback(
@@ -34,7 +34,7 @@ export default function Dashboard() {
   if (!d)
     return (
       <div className="p-24 fs-14 text-[#8a8a8a]">
-        {error ? <Banner msg={{ kind: 'error', text: error }} /> : 'Chargement…'}
+        {error ? <Banner msg={{ kind: 'error', text: error }} /> : <PageSkeleton />}
       </div>
     )
 

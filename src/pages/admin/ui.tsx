@@ -244,3 +244,35 @@ export function useDebounced<T>(value: T, ms = 300): T {
   }, [value, ms])
   return v
 }
+
+/** Grey placeholder rows while a page's first data arrives (never a blank page). */
+export function Skeleton({ rows = 6, className = '' }: { rows?: number; className?: string }) {
+  return (
+    <div className={`animate-pulse space-y-8 ${className}`} aria-busy="true" aria-label="Chargement">
+      {Array.from({ length: rows }, (_, i) => (
+        <div key={i} className="h-44 r-10 bg-[#f1ebe8]" style={{ opacity: 1 - i * 0.1 }} />
+      ))}
+    </div>
+  )
+}
+
+/** Whole-page placeholder: title, a row of tiles, then rows. Used while a page's code or first data loads. */
+export function PageSkeleton({ tiles = true }: { tiles?: boolean }) {
+  return (
+    <div className="mx-auto w-full max-w-1100 animate-pulse px-16 py-16 md:px-24 md:py-24" aria-busy="true" aria-label="Chargement">
+      <div className="h-28 w-200 r-8 bg-[#ece4e0]" />
+      {tiles && (
+        <div className="mt-18 grid grid-cols-2 gap-10 md:grid-cols-4">
+          {Array.from({ length: 4 }, (_, i) => (
+            <div key={i} className="h-88 r-12 bg-[#f1ebe8]" />
+          ))}
+        </div>
+      )}
+      <div className="mt-18 space-y-8">
+        {Array.from({ length: 6 }, (_, i) => (
+          <div key={i} className="h-44 r-10 bg-[#f1ebe8]" style={{ opacity: 1 - i * 0.1 }} />
+        ))}
+      </div>
+    </div>
+  )
+}

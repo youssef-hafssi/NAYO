@@ -3,8 +3,9 @@ import { Link } from 'react-router-dom'
 import { Download, Search } from 'lucide-react'
 import { adminApi, Unauthorized, type Customer, type Segment } from '../../lib/adminApi'
 import { useAuth } from './AdminApp'
+import { preloadRoute } from './preload'
 import { Flags } from './Orders'
-import { Banner, BusyButton, Chip, fmtDate, fmtMoney, formatPhone, inputClass, Pill, SEGMENT_LABEL, SEGMENT_PILL, useDebounced } from './ui'
+import { Banner, BusyButton, Chip, fmtDate, fmtMoney, formatPhone, inputClass, Pill, SEGMENT_LABEL, SEGMENT_PILL, useDebounced, Skeleton } from './ui'
 
 /* Clients: one per phone number, with segments, tags, search; CSV for the owner. */
 
@@ -23,9 +24,10 @@ export default function Customers() {
   const [segment, setSegment] = useState<Segment | ''>('')
   const [tag, setTag] = useState('')
   const [sort, setSort] = useState('last_order')
-  const [items, setItems] = useState<Customer[] | null>(null)
-  const [hasMore, setHasMore] = useState(false)
-  const [counts, setCounts] = useState<Partial<Record<Segment, number>>>({})
+  const initial = adminApi.customers({ sort: 'last_order', dir: 'desc' }).peek() // last data, shown at once
+  const [items, setItems] = useState<Customer[] | null>(initial?.items ?? null)
+  const [hasMore, setHasMore] = useState(initial?.has_more ?? false)
+  const [counts, setCounts] = useState<Partial<Record<Segment, number>>>(initial?.counts ?? {})
   const [loadingMore, setLoadingMore] = useState(false)
   const [message, setMessage] = useState<{ kind: 'ok' | 'error'; text: string } | null>(null)
   const sorts = owner ? [...SORTS, { key: 'value', label: 'Valeur livrée' }] : SORTS
@@ -42,9 +44,14 @@ export default function Customers() {
 
   useEffect(() => {
     let live = true
-    adminApi
-      .customers(JSON.parse(key))
-      .then((r) => {
+    const q = adminApi.customers(JSON.parse(key))
+    const cached = q.peek()
+    if (cached) {
+      setItems(cached.items) // seen before this session: shown at once, refreshed below
+      setHasMore(cached.has_more)
+      setCounts(cached.counts)
+    }
+    q.then((r) => {
         if (!live) return
         setItems(r.items)
         setHasMore(r.has_more)
@@ -125,14 +132,18 @@ export default function Customers() {
       <Banner msg={message} />
 
       {!items ? (
-        <p className="mt-18 fs-14 text-[#8a8a8a]">Chargement…</p>
+        <Skeleton className="mt-12" />
       ) : items.length === 0 ? (
         <p className="mt-18 fs-14 text-[#8a8a8a]">Aucun client ne correspond.</p>
       ) : (
         <ul className="mt-12 divide-y divide-[#f4eeeb] r-14 border border-[#ece2dd] bg-white">
           {items.map((c) => (
             <li key={c.phone}>
-              <Link to={`/admin/customers/${c.phone}`} className="flex flex-wrap items-center gap-x-14 gap-y-4 px-14 py-12 hover:bg-[#fbf8f6]">
+              <Link
+                to={`/admin/customers/${c.phone}`}
+                onMouseEnter={() => preloadRoute(`/admin/customers/${c.phone}`)}
+                onTouchStart={() => preloadRoute(`/admin/customers/${c.phone}`)}
+                className="flex flex-wrap items-center gap-x-14 gap-y-4 px-14 py-12 hover:bg-[#fbf8f6]">
                 <div className="min-w-0 flex-1 basis-200">
                   <p className="truncate fs-14 font-semibold">
                     {c.name || formatPhone(c.phone)}

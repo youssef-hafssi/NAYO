@@ -10,6 +10,7 @@ import {
   type Status,
   type Thread,
 } from '../../lib/adminApi'
+import { useAuth } from './AdminApp'
 import { Chip, FILTERS, formatPhone, hhmm, listTime, POLL_MS, StatusPill, usePolling, WINE, windowLeft, withStockConfirm } from './ui'
 
 /*
@@ -146,14 +147,15 @@ function OrderPanel({
 type PendingMessage = Message & { localId: string; pending: true; phone: string }
 
 export default function Inbox({ onLogout }: { onLogout: () => void }) {
-  const [me, setMe] = useState<{ name: string; online: number } | null>(null)
+  const { me } = useAuth() // loaded once per session by AdminApp (no /me call per visit)
   const [filter, setFilter] = useState<Filter>('all')
   const [search, setSearch] = useState('')
-  const [items, setItems] = useState<ConversationItem[]>([])
-  const [online, setOnline] = useState(0)
+  // Last data of this session shown at once (stale-while-revalidate), refreshed by the requests below.
+  const [items, setItems] = useState<ConversationItem[]>(() => adminApi.conversations('all').peek()?.items ?? [])
+  const [online, setOnline] = useState(() => adminApi.conversations('all').peek()?.online ?? 0)
   const [searchParams] = useSearchParams()
-  const [selected, setSelected] = useState<string | null>(searchParams.get('phone'))
-  const [thread, setThread] = useState<Thread | null>(null)
+  const [selected, setSelected] = useState<string | null>(() => searchParams.get('phone') ?? adminApi.conversations('all').peek()?.items[0]?.phone ?? null)
+  const [thread, setThread] = useState<Thread | null>(() => (selected ? (adminApi.thread(selected).peek() ?? null) : null))
   const [threadLoading, setThreadLoading] = useState(false)
   const [pending, setPending] = useState<PendingMessage[]>([]) // optimistic agent messages, per phone
   const [draft, setDraft] = useState('')
@@ -168,7 +170,7 @@ export default function Inbox({ onLogout }: { onLogout: () => void }) {
   selectedRef.current = selected
 
   const guard = useCallback(
-    async <T,>(p: Promise<T>): Promise<T | undefined> => {
+    async <T,>(p: PromiseLike<T>): Promise<T | undefined> => {
       try {
         return await p
       } catch (e) {
@@ -200,10 +202,6 @@ export default function Inbox({ onLogout }: { onLogout: () => void }) {
   )
 
   useEffect(() => {
-    guard(adminApi.me()).then((m) => m && setMe(m))
-  }, [guard])
-
-  useEffect(() => {
     loadList()
   }, [loadList])
   usePolling(loadList, POLL_MS, true, loadList)
@@ -211,7 +209,12 @@ export default function Inbox({ onLogout }: { onLogout: () => void }) {
   useEffect(() => {
     if (!selected) return
     lastCount.current = 0
-    setThreadLoading(true) // previous thread stays visible, dimmed, until the new one arrives
+    const cached = adminApi.thread(selected).peek()
+    if (cached) {
+      setThread(cached) // already opened this session: shown at once, refreshed below
+      setNotes(cached.conversation.internal_notes)
+    }
+    setThreadLoading(!cached) // otherwise the previous thread stays visible, dimmed, until the new one arrives
     loadThread(selected, true).finally(() => {
       if (selectedRef.current === selected) setThreadLoading(false)
     })

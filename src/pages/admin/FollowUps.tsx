@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom'
 import { Lightbulb, MessageSquare } from 'lucide-react'
 import { adminApi, Unauthorized, type Suggestion, type Task, type TaskView } from '../../lib/adminApi'
 import { useAuth } from './AdminApp'
-import { Banner, BusyButton, Chip, FieldLabel, fmtDateTime, formatPhone, inputClass } from './ui'
+import { Banner, BusyButton, Chip, FieldLabel, fmtDateTime, formatPhone, inputClass, Skeleton } from './ui'
 
 /*
  * Relances: follow-up tasks (Aujourd'hui / En retard / À venir / Faites) and the suggestions computed from the
@@ -30,10 +30,12 @@ const casaNow = () => {
 export default function FollowUps() {
   const { logout } = useAuth()
   const [view, setView] = useState<TaskView>('today')
-  const [items, setItems] = useState<Task[] | null>(null)
-  const [suggestions, setSuggestions] = useState<Suggestion[]>([])
+  const [items, setItems] = useState<Task[] | null>(() => adminApi.tasks('today').peek()?.items ?? null)
+  const [suggestions, setSuggestions] = useState<Suggestion[]>(() => adminApi.tasks('today').peek()?.suggestions ?? [])
   const [hasMore, setHasMore] = useState(false)
-  const [counts, setCounts] = useState<{ late: number; today: number; upcoming: number; suggestions: number } | null>(null)
+  const [counts, setCounts] = useState<{ late: number; today: number; upcoming: number; suggestions: number } | null>(
+    () => adminApi.taskCounts().peek() ?? null,
+  )
   const [team, setTeam] = useState<string[]>([])
   const [busy, setBusy] = useState<string | null>(null)
   const [adding, setAdding] = useState(false)
@@ -61,7 +63,9 @@ export default function FollowUps() {
   }, [view, fail])
 
   useEffect(() => {
-    setItems(null)
+    const cached = adminApi.tasks(view).peek()
+    setItems(cached?.items ?? null) // this view seen before: shown at once, refreshed by load()
+    if (cached) setSuggestions(cached.suggestions ?? [])
     load()
   }, [load])
   useEffect(() => {
@@ -166,7 +170,7 @@ export default function FollowUps() {
       )}
 
       {!items ? (
-        <p className="mt-18 fs-14 text-[#8a8a8a]">Chargement…</p>
+        <Skeleton className="mt-14" rows={4} />
       ) : items.length === 0 ? (
         <p className="mt-18 fs-14 text-[#8a8a8a]">
           {view === 'today' ? (suggestions.length ? 'Aucune relance prévue aujourd’hui.' : 'Rien à faire aujourd’hui.') : 'Aucune relance.'}

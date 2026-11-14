@@ -11,7 +11,8 @@ import {
   type Status,
 } from '../../lib/adminApi'
 import { useAuth } from './AdminApp'
-import { Banner, BusyButton, Chip, FieldLabel, fmtDate, formatPhone, inputClass, STATUS_LABEL, StatusPill, useDebounced } from './ui'
+import { preloadRoute } from './preload'
+import { Banner, BusyButton, Chip, FieldLabel, fmtDate, formatPhone, inputClass, STATUS_LABEL, StatusPill, useDebounced, Skeleton } from './ui'
 
 /*
  * Commandes: every order with search, filters, per-status chips, sort, bulk status / carrier, CSV (owner).
@@ -45,10 +46,12 @@ export default function Orders() {
   const [sort, setSort] = useState('created_at')
   const [dir, setDir] = useState<'asc' | 'desc'>('desc')
   const [showFilters, setShowFilters] = useState(false)
-  const [items, setItems] = useState<OrderRow[] | null>(null)
-  const [hasMore, setHasMore] = useState(false)
-  const [counts, setCounts] = useState<Partial<Record<Status, number>>>({})
-  const [cities, setCities] = useState<string[]>([])
+  // Last data for the default view, shown at once on return (stale-while-revalidate).
+  const initial = adminApi.orders({ sort: 'created_at', dir: 'desc' }).peek()
+  const [items, setItems] = useState<OrderRow[] | null>(initial?.items ?? null)
+  const [hasMore, setHasMore] = useState(initial?.has_more ?? false)
+  const [counts, setCounts] = useState<Partial<Record<Status, number>>>(initial?.counts ?? {})
+  const [cities, setCities] = useState<string[]>(initial?.cities ?? [])
   const [carriers, setCarriers] = useState<Carrier[]>([])
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const [bulkStatus, setBulkStatus] = useState('')
@@ -72,12 +75,17 @@ export default function Orders() {
 
   const load = useCallback(async () => {
     if (!datesOk) return
-    try {
-      const r = await adminApi.orders(JSON.parse(key) as OrderFilters)
+    const apply = (r: { items: OrderRow[]; has_more: boolean; counts: Partial<Record<Status, number>>; cities?: string[] }) => {
       setItems(r.items)
       setHasMore(r.has_more)
       setCounts(r.counts)
       if (r.cities) setCities(r.cities)
+    }
+    try {
+      const q = adminApi.orders(JSON.parse(key) as OrderFilters)
+      const cached = q.peek()
+      if (cached) apply(cached) // this filter was seen before: show it now, refresh below
+      apply(await q)
     } catch (e) {
       fail(e)
     }
@@ -325,7 +333,7 @@ export default function Orders() {
       )}
 
       {!items ? (
-        <p className="mt-18 fs-14 text-[#8a8a8a]">Chargement…</p>
+        <Skeleton className="mt-12" />
       ) : items.length === 0 ? (
         <p className="mt-18 fs-14 text-[#8a8a8a]">Aucune commande ne correspond.</p>
       ) : (
@@ -359,6 +367,7 @@ export default function Orders() {
                   <tr
                     key={o.order_number}
                     onClick={() => navigate(`/admin/orders/${encodeURIComponent(o.order_number)}`)}
+                    onMouseEnter={() => preloadRoute(`/admin/orders/${encodeURIComponent(o.order_number)}`)}
                     className={`cursor-pointer hover:bg-[#fbf8f6] ${selected.has(o.order_number) ? 'bg-[#fbf5f2]' : ''}`}
                   >
                     <td className="px-12 py-8" onClick={(e) => e.stopPropagation()}>
@@ -407,7 +416,7 @@ export default function Orders() {
                     onChange={() => toggle(o.order_number)}
                   />
                 </label>
-                <Link to={`/admin/orders/${encodeURIComponent(o.order_number)}`} className="min-w-0 flex-1">
+                <Link to={`/admin/orders/${encodeURIComponent(o.order_number)}`} onMouseEnter={() => preloadRoute(`/admin/orders/${encodeURIComponent(o.order_number)}`)} onTouchStart={() => preloadRoute(`/admin/orders/${encodeURIComponent(o.order_number)}`)} className="min-w-0 flex-1">
                   <div className="flex items-center justify-between gap-8">
                     <span className="fs-14 font-bold">{o.order_number}</span>
                     <StatusPill status={o.status} />

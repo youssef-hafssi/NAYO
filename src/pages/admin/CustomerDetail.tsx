@@ -1,11 +1,11 @@
-import { useCallback, useEffect, useState, type FormEvent } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, type FormEvent } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { AlertTriangle, ArrowLeft, MessageSquare } from 'lucide-react'
 import { adminApi, Unauthorized, type Customer, type CustomerOrder, type Task } from '../../lib/adminApi'
 import { useAuth } from './AdminApp'
 import { NewTaskForm, refreshBadge, TaskItem } from './FollowUps'
 import { PRODUCT } from '../../content'
-import { Banner, BusyButton, FieldLabel, fmtDate, fmtMoney, formatPhone, inputClass, Pill, SEGMENT_LABEL, SEGMENT_PILL, StatusPill } from './ui'
+import { Banner, BusyButton, FieldLabel, fmtDate, fmtMoney, formatPhone, inputClass, Pill, SEGMENT_LABEL, SEGMENT_PILL, StatusPill, PageSkeleton } from './ui'
 
 /* Fiche client: profile (name, city, address, tags, note, STOP), their orders, follow-ups, "Nouvelle commande". */
 
@@ -45,22 +45,41 @@ export default function CustomerDetail() {
     [logout],
   )
 
-  const load = useCallback(async () => {
-    try {
-      const r = await adminApi.customer(phone)
-      setC(r.customer)
-      setForm(toForm(r.customer))
-      setOrders(r.orders)
-      setTasks(r.tasks)
-      setWindowOpen(r.window_open)
-    } catch (e) {
-      if (e instanceof Error && /introuvable|404/.test(e.message)) setNotFound(true)
-      else fail(e)
-    }
-  }, [phone, fail])
+  // The form shown from data: a background refresh only replaces it while it is untouched (never your typing).
+  const shownForm = useRef('')
+  const apply = useCallback((r: Awaited<ReturnType<typeof adminApi.customer>>, reset: boolean) => {
+    const next = toForm(r.customer)
+    setC(r.customer)
+    setForm((prev) => {
+      if (!reset && prev && JSON.stringify(prev) !== shownForm.current) return prev
+      shownForm.current = JSON.stringify(next)
+      return next
+    })
+    setOrders(r.orders)
+    setTasks(r.tasks)
+    setWindowOpen(r.window_open)
+  }, [])
+
+  /** reset=false: background refresh (keeps an edited form); true (default): after a save. */
+  const load = useCallback(
+    async (reset = true) => {
+      try {
+        apply(await adminApi.customer(phone), reset)
+      } catch (e) {
+        if (e instanceof Error && /introuvable|404/.test(e.message)) setNotFound(true)
+        else fail(e)
+      }
+    },
+    [phone, fail, apply],
+  )
+
+  useLayoutEffect(() => {
+    const cached = adminApi.customer(phone).peek() // seen this session: shown before the first paint
+    if (cached) apply(cached, true)
+  }, [phone, apply])
 
   useEffect(() => {
-    load()
+    load(false)
     adminApi
       .team()
       .then((t) => setTeam(t.names))
@@ -76,7 +95,7 @@ export default function CustomerDetail() {
         </Link>
       </div>
     )
-  if (!c || !form) return <div className="p-24 fs-14 text-[#8a8a8a]">Chargement…</div>
+  if (!c || !form) return <PageSkeleton />
 
   const save = async (e: FormEvent) => {
     e.preventDefault()

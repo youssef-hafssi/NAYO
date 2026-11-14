@@ -45,17 +45,25 @@ class GeminiAI:
         timeout_s: float = 20,
         thinking_budget: int | None = 0,
     ):
-        if client is None:
-            from google import genai
-            from google.genai import types
-
-            # Hard time limit per call: an overloaded model must fail fast, never keep a client waiting minutes.
-            client = genai.Client(api_key=api_key, http_options=types.HttpOptions(timeout=int(timeout_s * 1000)))
-        self._client = client
+        # The SDK takes ~0.8 s to import: created on the first AI call, not at start-up (admin requests never
+        # need it, and every cold start of the serverless function paid for it).
+        self._client_obj = client
+        self._api_key, self._timeout_s = api_key, timeout_s
         self._model = model
         # Attempt 1 → main model, attempt 2 → fallback (when the main one is overloaded or returned bad JSON).
         self._models = (model, fallback_model or model)
         self._thinking_budget = thinking_budget
+
+    @property
+    def _client(self) -> Any:
+        if self._client_obj is None:
+            from google import genai
+            from google.genai import types
+
+            # Hard time limit per call: an overloaded model must fail fast, never keep a client waiting minutes.
+            self._client_obj = genai.Client(api_key=self._api_key,
+                                            http_options=types.HttpOptions(timeout=int(self._timeout_s * 1000)))
+        return self._client_obj
 
     def run(self, context: dict, history: list[tuple[str, str]], last_message: str) -> AIResult:
         from google.genai import types

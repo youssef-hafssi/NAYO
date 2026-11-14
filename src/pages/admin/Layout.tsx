@@ -1,8 +1,9 @@
-import { useCallback, useEffect, useState } from 'react'
-import { NavLink, Outlet } from 'react-router-dom'
+import { useCallback, useEffect, useLayoutEffect, useState } from 'react'
+import { NavLink, Outlet, useLocation } from 'react-router-dom'
 import { BarChart3, BellRing, ClipboardList, LayoutDashboard, MessageSquare, MoreHorizontal, Package, ShoppingCart, Truck, Users, Wallet, type LucideIcon } from 'lucide-react'
 import { adminApi } from '../../lib/adminApi'
 import { useAuth } from './AdminApp'
+import { preloadRoute } from './preload'
 import { usePolling, WINE } from './ui'
 
 /*
@@ -46,7 +47,17 @@ function useTaskBadge(): number {
   return n
 }
 
+/** Hover / touch / keyboard focus on a link starts that page's code and data before the click. */
+const warm = (to: string) => ({ onMouseEnter: () => preloadRoute(to), onTouchStart: () => preloadRoute(to), onFocus: () => preloadRoute(to) })
+
 export default function Layout() {
+  const location = useLocation()
+  // Every navigation (menu, links inside pages, back button): the route's requests start now, in parallel with
+  // its code — the page's own identical requests then share them instead of starting after the code arrives.
+  useLayoutEffect(() => {
+    preloadRoute(location.pathname + location.search)
+  }, [location.pathname, location.search])
+
   const { me } = useAuth()
   const badge = useTaskBadge()
   const items = NAV.filter((i) => !i.ownerOnly || me.role === 'owner').map((i) =>
@@ -67,6 +78,7 @@ export default function Layout() {
           <NavLink
             key={i.to}
             to={i.to}
+            {...warm(i.to)}
             className={({ isActive }) =>
               `relative flex w-64 flex-col items-center gap-3 r-10 py-8 fs-10.5 font-semibold transition-colors ${
                 isActive ? 'bg-[#f1e3e5] text-[#3a0a10]' : 'text-[#6b6b6b] hover:bg-[#f3eeeb]'
@@ -94,6 +106,7 @@ export default function Layout() {
           <NavLink
             key={i.to}
             to={i.to}
+            {...warm(i.to)}
             className={({ isActive }) =>
               `relative flex min-w-0 flex-1 flex-col items-center justify-center gap-2 fs-10.5 font-semibold ${
                 isActive ? 'text-[#3a0a10]' : 'text-[#8a8a8a]'
