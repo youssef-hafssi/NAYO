@@ -5,7 +5,7 @@ import { ORDER_PATH } from '../content'
 
 const NAV = [
   { href: '#benefices', label: 'Bénéfices' },
-  { href: '#avis', label: 'Avis' },
+  { href: '#pourquoi', label: 'Pourquoi NAYO' }, // reviews are hidden until real ones exist
   { href: '#faq', label: 'FAQ' },
 ]
 

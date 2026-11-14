@@ -116,6 +116,16 @@ def create_app(services: Services | None = None, settings: Settings | None = Non
             log.error("health: services unavailable: %s", type(e).__name__)
             return JSONResponse({"ok": False, "db": False}, status_code=503)
 
+    @app.get("/cron/review-requests")
+    def cron_reviews(request: Request) -> dict[str, Any]:
+        """Vercel Cron (daily, see vercel.json) with "Authorization: Bearer <CRON_SECRET>"."""
+        secret = settings.cron_secret
+        if not secret:
+            raise HTTPException(503, "cron disabled (CRON_SECRET not set)")
+        if not hmac.compare_digest(request.headers.get("authorization", ""), f"Bearer {secret}"):
+            raise HTTPException(401, "bad cron secret")
+        return {"asked": svc().bot.ask_reviews()}
+
     @app.post("/orders", response_model=OrderOut)
     async def post_order(request: Request) -> Any:
         s = svc()

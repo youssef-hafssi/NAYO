@@ -49,9 +49,10 @@ export function Editorial() {
             éclaircissant du quotidien.
           </h2>
           <p data-anim="reveal" className="mt-16 max-w-400 fs-16 lh-23 text-[#2e1a1c] lg:mt-14 lg:max-w-none lg:whitespace-nowrap lg:fs-17 lg:lh-22 lg:font-[500]">
-            Efficace, confortable et élégant, NAYO unifie <br className="hidden lg:block" />
-            le teint de vos aisselles, tout en vous offrant <br className="hidden lg:block" />
-            fraîcheur et protection toute la journée.
+            NAYO aide à éclaircir et à unifier le teint <br className="hidden lg:block" />
+            de vos aisselles grâce à son Super Fruit <br className="hidden lg:block" />
+            Enzyme Triple Blend et à l'acide citrique, <br className="hidden lg:block" />
+            qui exfolient la peau en douceur.
           </p>
           <Link
             to={ORDER_PATH}

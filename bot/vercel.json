@@ -1,5 +1,6 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "regions": ["dub1"],
-  "fluid": true
+  "fluid": true,
+  "crons": [{ "path": "/cron/review-requests", "schedule": "0 18 * * *" }]
 }

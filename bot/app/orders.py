@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import re
+from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
@@ -15,6 +16,8 @@ from .store import Store
 log = logging.getLogger("nayo.orders")
 
 _CONTROL = re.compile(r"[\x00-\x1f\x7f]")
+MIN_CITY, MAX_CITY = 2, 60
+MIN_ADDRESS, MAX_ADDRESS = 5, 200
 
 
 class OrderIn(BaseModel):
@@ -36,6 +39,22 @@ class OrderIn(BaseModel):
     payment: str | None = Field(default=None, pattern=r"^cash_on_delivery$")
     status: str | None = Field(default=None, pattern=r"^new$")
     createdAt: str | None = Field(default=None, max_length=40)
+    # Express checkout on the landing page: city + address known -> the bot only sends the recap and asks "oui".
+    city: str | None = Field(default=None, max_length=MAX_CITY)
+    address: str | None = Field(default=None, max_length=MAX_ADDRESS)
+
+    @field_validator("city", "address")
+    @classmethod
+    def _place(cls, v: str | None, info: Any) -> str | None:
+        if v is None:
+            return None
+        v = " ".join(_CONTROL.sub(" ", v).split())
+        if not v:
+            return None  # an empty field is "not given", like on /commande
+        minimum = MIN_CITY if info.field_name == "city" else MIN_ADDRESS
+        if len(v) < minimum or v[0] in "=+-@":  # also blocks spreadsheet formula injection
+            raise ValueError(f"invalid {info.field_name}")
+        return v
 
     @field_validator("name")
     @classmethod
@@ -80,10 +99,10 @@ def create_order(body: OrderIn, orders: OrdersRepo, store: Store) -> OrderOut:
         log.info("alias %s → %s", body.orderNumber, number)
 
     if not written:
-        orders.append(
-            order_row(number, body.name, body.phone, body.quantity, "new",
-                      "" if not body.orderNumber else "numéro de secours (site)", source="website")
-        )
+        row = order_row(number, body.name, body.phone, body.quantity, "new",
+                        "" if not body.orderNumber else "numéro de secours (site)", source="website")
+        row.update(city=body.city or "", address=body.address or "")
+        orders.append(row)
         store.mark_written(body.clientId)
         log.info("order %s created (qty %d, %d MAD)", number, body.quantity, total)
     return OrderOut(orderNumber=number, quantity=body.quantity, total=total)

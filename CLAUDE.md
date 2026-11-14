@@ -4,6 +4,13 @@ Pixel-accurate recreation of two approved designs (landing + checkout) for the N
 
 ## Status
 - Landing page (`/`): built and screenshot-matched to the reference at 1024px.
+- Owner-approved landing changes (override the screenshots for these parts only): trust strip right below the hero
+  (Livraison rapide · Paiement à la livraison · Confirmation sur WhatsApp), express checkout `#commander` (name, phone,
+  city, address, qty → same POST /orders + success screen as /commande), before/after `semaine-1/4-*.webp` with the
+  "Images à titre illustratif" line, "Pourquoi NAYO" (brand statements + face-blurred `nayo-selfie-*.webp`).
+  Reviews are hidden (`SHOW_REVIEWS` in content.ts): only real, approved reviews may ever be shown there.
+- Formula wording: "éclaircit / unifie le teint" (never "blanchit"); only claim = Super Fruit Enzyme Triple Blend +
+  citric acid gently exfoliate. Unblurred source photos live in `design/originals/` (git-ignored, never in public/).
 - Checkout (`/commande`): built and screenshot-matched to the reference at 1536px.
 - Hero = `hero-bg.jpg` (burgundy silk backdrop) + `model.webp` (owner-supplied cutout, full elbow visible) as two depth layers.
 - Order flow: submit → POST `VITE_ORDER_ENDPOINT` (the bot's `/orders`, waits ≤10 s, button shows "Envoi en cours…") → bot returns `NAYO-1001`-style number. On timeout/error: fallback `NAYO-W123456`, order saved in localStorage and re-sent on the success screen + every page load (`src/lib/orders.ts`). Checkout pings `/health` on load to wake the sleeping free host.

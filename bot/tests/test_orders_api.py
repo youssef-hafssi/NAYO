@@ -85,3 +85,41 @@ def test_cors_only_for_site(client):
     assert ok.headers.get("access-control-allow-origin") == "https://nayo.ma"
     bad = client.options("/orders", headers={"Origin": "https://evil.example", "Access-Control-Request-Method": "POST"})
     assert "access-control-allow-origin" not in bad.headers
+
+
+# ---------------------------------------------------------------- express checkout (landing page)
+def test_express_order_stores_city_and_address(client, orders):
+    r = client.post("/orders", json=order(city="  Agadir ", address="Hay Salam,\n rue 12  "), headers=H)
+    assert r.status_code == 200, r.text
+    row = orders.get(r.json()["orderNumber"])
+    assert (row["city"], row["address"]) == ("Agadir", "Hay Salam, rue 12")
+    # /commande sends neither: unchanged
+    row = orders.get(client.post("/orders", json=order(), headers=H).json()["orderNumber"])
+    assert (row["city"], row["address"]) == ("", "")
+    # empty fields count as "not given"
+    row = orders.get(client.post("/orders", json=order(city=" ", address=""), headers=H).json()["orderNumber"])
+    assert (row["city"], row["address"]) == ("", "")
+
+
+def test_express_order_city_and_address_are_validated(client):
+    for bad in ({"city": "A"}, {"city": "x" * 61}, {"address": "rue"}, {"address": "x" * 201},
+                {"city": "=HYPERLINK(1)"}, {"address": "+212 hack"}):
+        r = client.post("/orders", json=order(**bad), headers=H)
+        assert r.status_code == 422, bad
+        assert set(r.json()["fields"]) <= {"city", "address"}, r.json()
+
+
+def test_express_order_bot_sends_the_recap_and_only_asks_yes(client, orders, say, wa, ai):
+    from .conftest import CLIENT
+
+    n = client.post("/orders", json=order(quantity=1, total=209, subtotal=189, city="Agadir", address="Hay Salam, rue 12"),
+                    headers=H).json()["orderNumber"]
+    ai.push("confirm", "Merci !")
+    say(f"Bonjour NAYO, je confirme ma commande {n} – 209 MAD – Salma Kettani")
+    recap = wa.to(CLIENT)[-1]
+    assert "Agadir" in recap and "Hay Salam, rue 12" in recap and "209 MAD" in recap and "c'est bon" in recap
+    assert "ville" not in recap.lower()  # nothing left to ask
+    assert orders.get(n)["status"] == "awaiting_details"
+    ai.push("confirm", "Super")
+    say("oui")
+    assert orders.get(n)["status"] == "confirmed"

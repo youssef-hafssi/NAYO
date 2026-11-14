@@ -8,26 +8,14 @@ export const PRODUCT = {
 
 export const ORDER_PATH = '/commande'
 
-export const REVIEWS = [
-  {
-    quote: 'Mes aisselles sont visiblement plus claires après quelques semaines.',
-    lines: ['Mes aisselles sont visiblement', 'plus claires après quelques semaines.'],
-    name: 'Yassine M.',
-    avatar: '/assets/av-yassine.jpg',
-  },
-  {
-    quote: 'Douce sur la peau et vraiment bien tolérée.',
-    lines: ['Douce sur la peau et vraiment', 'bien tolérée.'],
-    name: 'Salma K.',
-    avatar: '/assets/av-salma.jpg',
-  },
-  {
-    quote: 'Je le recommande, simple et très efficace.',
-    lines: ['Je le recommande, simple', 'et très efficace.'],
-    name: 'Imane R.',
-    avatar: '/assets/av-imane.jpg',
-  },
-] as const
+/*
+ * Customer reviews: hidden until real ones are collected (the bot asks 3 days after delivery and stores the
+ * replies in the admin, under Clients → "Avis"). To show them: add real, approved reviews here and set
+ * SHOW_REVIEWS to true. Never invent reviews.
+ */
+export type Review = { quote: string; lines: [string, string]; name: string; avatar?: string }
+export const SHOW_REVIEWS = false
+export const REVIEWS: Review[] = []
 
 // DRAFT ANSWERS — to be confirmed by the brand before launch (claims about results and formula).
 export const FAQ = [
@@ -41,6 +29,6 @@ export const FAQ = [
   },
   {
     q: "Contient-il de l'aluminium ?",
-    a: "La liste complète des ingrédients figure sur l'emballage. Pour toute question sur la composition, contactez-nous avant de commander : nous vous répondrons rapidement.",
+    a: "NAYO contient un Super Fruit Enzyme Triple Blend et de l'acide citrique, qui exfolient la peau en douceur. La liste complète des ingrédients figure sur l'emballage. Pour toute question sur la composition, contactez-nous avant de commander : nous vous répondrons rapidement.",
   },
 ] as const

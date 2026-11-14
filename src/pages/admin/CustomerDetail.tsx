@@ -185,6 +185,18 @@ export default function CustomerDetail() {
       )}
       <Banner msg={message} />
 
+      {c.review_text && (
+        <section className="mt-14 r-14 border border-[#f0dfc2] bg-[#fffaf0] p-14">
+          <h2 className="fs-14 font-bold">
+            Avis du client <span className="fs-12 font-normal text-[#7a6a50]">· jamais publié automatiquement</span>
+          </h2>
+          <p className="mt-6 whitespace-pre-wrap break-words fs-15 lh-22">{c.review_text}</p>
+          <p className="mt-6 fs-12 text-[#7a6a50]">
+            Reçu le {fmtDate(c.review_at)} sur WhatsApp{c.review_order ? `, après la commande ${c.review_order}` : ''}.
+          </p>
+        </section>
+      )}
+
       <div className="mt-14 grid grid-cols-2 gap-10 md:grid-cols-4">
         <Stat label="Commandes" value={String(c.orders_count)} />
         <Stat label="Livrées" value={String(c.delivered)} />

@@ -14,6 +14,25 @@ T: dict[str, dict[str, str]] = {
         "darija": "Salam 😊 3afak sift lina numéro dyal la commande (bhal NAYO-1043), kayn f la page dyal la confirmation.",
         "ar": "السلام 😊 عافاك صيفط لينا رقم الطلب (بحال NAYO-1043)، كاين فصفحة التأكيد.",
     },
+    # Asked once, 3 days after delivery, only inside the 24 h window (no template). Never published automatically.
+    "review_ask": {
+        "fr": "Bonjour {first} 😊 Vous avez reçu votre NAYO il y a quelques jours : êtes-vous satisfaite ? Si vous le souhaitez, répondez avec un petit avis en quelques mots 🙏",
+        "darija": "Salam {first} 😊 Wslatek NAYO hadi chi iyam: wach 3jbatek? Ila bghiti, jawbina b chi kelma 3la ra2yek 🙏",
+        "ar": "السلام {first} 😊 وصلاتك NAYO هادي شي يامات: واش عجباتك؟ إلا بغيتي، جاوبينا بشي كلمة على رأيك 🙏",
+        "en": "Hi {first} 😊 You received your NAYO a few days ago: are you happy with it? If you like, reply with a short review 🙏",
+    },
+    "review_thanks": {
+        "fr": "Merci beaucoup pour votre avis 💛",
+        "darija": "Chokran bzaf 3la ra2yek 💛",
+        "ar": "شكرا بزاف على رأيك 💛",
+        "en": "Thank you so much for your review 💛",
+    },
+    "review_declined": {
+        "fr": "Pas de souci, merci {first} 😊 Nous restons disponibles ici si besoin.",
+        "darija": "Machi mochkil, chokran {first} 😊 Ila htajiti chi haja ra7na hna.",
+        "ar": "ماشي مشكل، شكرا {first} 😊 إلا احتاجيتي شي حاجة راحنا هنا.",
+        "en": "No problem, thank you {first} 😊 We're here if you need anything.",
+    },
     "stock_limit": {
         "fr": "Désolé, il ne nous reste que {n} NAYO en stock 🙏 Voulez-vous en commander {n} ?",
         "darija": "Smhlina, ma b9a lina ghir {n} NAYO f stock 🙏 Bghiti tchd {n}?",

@@ -27,6 +27,9 @@ export type OrderPayload = {
   payment: 'cash_on_delivery'
   status: 'new'
   createdAt: string
+  // Express checkout (landing page): the bot then only sends the recap and asks "oui".
+  city?: string
+  address?: string
 }
 
 export type SubmitResult = { orderNumber: string; total: number; fallback: boolean }

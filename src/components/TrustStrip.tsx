@@ -1,29 +1,31 @@
-import { Package, RefreshCw, ShieldCheck, Truck } from 'lucide-react'
+import { Banknote, Truck } from 'lucide-react'
+import { WhatsAppGlyph } from './WhatsAppGlyph'
+
+/* Right below the hero: the three reasons to order now. One row on every size; compact on phones. */
 
 const ITEMS = [
-  { Icon: Truck, l1: 'Livraison rapide', l2: 'partout au Maroc' },
-  { Icon: Package, l1: 'Paiement', l2: 'à la livraison' },
-  { Icon: RefreshCw, l1: 'Retour facile', l2: 'sous 7 jours' },
-  { Icon: ShieldCheck, l1: 'Achat 100%', l2: 'sécurisé' },
+  { icon: <Truck className="size-22 md:size-26" strokeWidth={1.5} aria-hidden />, l1: 'Livraison', l2: 'rapide' },
+  { icon: <Banknote className="size-22 md:size-26" strokeWidth={1.5} aria-hidden />, l1: 'Paiement', l2: 'à la livraison' },
+  { icon: <WhatsAppGlyph className="size-20 md:size-24" />, l1: 'Confirmation', l2: 'sur WhatsApp' },
 ]
 
 export function TrustStrip() {
   return (
-    <section aria-label="Garanties" className="bg-ivory">
-      <ul className="mx-auto grid w-full max-w-1024 grid-cols-2 gap-y-20 px-20 py-28 md:grid-cols-4 md:px-24 lg:h-85 lg:grid-cols-[calc(var(--spacing)*220)_calc(var(--spacing)*237)_calc(var(--spacing)*236)_1fr] lg:px-0 lg:py-0 lg:pt-24 lg:pl-80">
-        {ITEMS.map(({ Icon, l1, l2 }, i) => (
+    <section aria-label="Garanties" className="border-b border-line bg-ivory">
+      <ul className="mx-auto grid w-full max-w-1024 grid-cols-3 px-8 py-14 md:px-24 md:py-18">
+        {ITEMS.map((it, i) => (
           <li
-            key={l1}
+            key={it.l1}
             data-anim="reveal"
-            className={`flex items-center gap-14 md:justify-center lg:gap-15 lg:justify-start ${['','lg:pl-57','lg:pl-45','lg:pl-46'][i]} ${
-              i > 0 ? 'md:border-l md:border-[#cdbab0]' : ''
-            } lg:h-38`}
+            className={`flex flex-col items-center gap-6 px-4 text-center text-ink md:flex-row md:justify-center md:gap-12 md:text-left ${
+              i > 0 ? 'border-l border-[#d8c6bb]' : ''
+            }`}
           >
-            <Icon className="size-34 shrink-0 text-[#2a0a0c] lg:size-42" strokeWidth={1.45} aria-hidden />
-            <span className="fs-13.5 lh-19 font-[650] lg:fs-14 text-[#2a0a0c]">
-              {l1}
+            <span className="grid size-38 shrink-0 place-items-center rounded-full bg-[#f6e8e0] text-ink-title md:size-46">{it.icon}</span>
+            <span className="fs-12.5 lh-16 font-[650] md:fs-14.5 md:lh-19">
+              {it.l1}
               <br />
-              {l2}
+              {it.l2}
             </span>
           </li>
         ))}

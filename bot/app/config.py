@@ -52,6 +52,8 @@ class Settings(BaseSettings):
 
     # Admin inbox (/admin): signs the login cookie. Long random string; empty = admin disabled.
     admin_secret: str = ""
+    # Vercel Cron sends "Authorization: Bearer <CRON_SECRET>"; without it the /cron/* endpoints are disabled.
+    cron_secret: str = ""
     admin_session_days: int = 7
 
     # Conversation limits

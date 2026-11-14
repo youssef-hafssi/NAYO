@@ -7,6 +7,9 @@ import { Benefits } from '../components/Benefits'
 import { Editorial } from '../components/Editorial'
 import { TrustStrip } from '../components/TrustStrip'
 import { Reviews } from '../components/Reviews'
+import { ExpressCheckout } from '../components/ExpressCheckout'
+import { BeforeAfter } from '../components/BeforeAfter'
+import { WhyNayo } from '../components/WhyNayo'
 import { Faq } from '../components/Faq'
 import { Footer } from '../components/Footer'
 
@@ -82,9 +85,13 @@ export default function Landing() {
       <Header />
       <main>
         <Hero />
+        <TrustStrip />
+        <ExpressCheckout />
         <Benefits />
         <Editorial />
-        <TrustStrip />
+        <BeforeAfter />
+        <WhyNayo />
+        {/* hidden until real, approved reviews exist (content.ts → SHOW_REVIEWS) */}
         <Reviews />
         <Faq />
       </main>

@@ -22,3 +22,6 @@ __pycache__/
 .DS_Store
 Thumbs.db
 .vercel
+
+# Owner-supplied source photos (unblurred originals): never published
+design/originals/

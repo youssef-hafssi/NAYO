@@ -274,3 +274,15 @@ index.py         Vercel entry point (FastAPI preset)
 tests/           pytest (AI, Sheet and WhatsApp are mocked)
 test_conversations.py   real-AI smoke test
 ```
+
+
+## Review requests (daily cron)
+
+3 days after an order is marked delivered, the bot asks the client once (fr / darija / ar / en) whether she is happy
+and invites a short review — only if her 24 h WhatsApp window is open (no templates), never after STOP, and never while
+another conversation is in progress. Her reply is stored on the customer (admin → Clients → tag "Avis") and is never
+published automatically.
+
+Vercel Cron calls `GET /cron/review-requests` once a day (`bot/vercel.json`, 18:00 UTC; Hobby plans allow one run a
+day). Set `CRON_SECRET` (a long random string) on the **nayo-bot** Vercel project: Vercel then sends it as
+`Authorization: Bearer …`. Without it the endpoint answers 503 and nothing is sent.

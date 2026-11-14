@@ -266,6 +266,9 @@ export type Customer = {
   cancelled: number
   last_order: string
   segment: Segment
+  review_text: string // asked by the bot 3 days after delivery; never published automatically
+  review_at: string
+  review_order: string
 }
 export type CustomerOrder = {
   order_number: string

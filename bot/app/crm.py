@@ -68,7 +68,7 @@ def clean_tags(tags: list[str]) -> str:
 
 
 class Crm:
-    SCHEMA_VERSION = 1
+    SCHEMA_VERSION = 2
 
     def __init__(self, store: Any):
         self.store = store
@@ -87,10 +87,18 @@ class Crm:
                 "CREATE INDEX IF NOT EXISTS tasks_open ON tasks (done_at, due_at)",
                 "CREATE UNIQUE INDEX IF NOT EXISTS tasks_suggestion ON tasks (suggestion_key)",
                 "CREATE INDEX IF NOT EXISTS tasks_phone ON tasks (customer_phone)",
+                # One review request per delivered order (asked once, 3 days after delivery).
+                """CREATE TABLE IF NOT EXISTS review_requests (order_number TEXT PRIMARY KEY, phone TEXT NOT NULL,
+                    asked_at TEXT NOT NULL, answered_at TEXT, reply TEXT NOT NULL DEFAULT '',
+                    declined INTEGER NOT NULL DEFAULT 0)""",
+                "CREATE INDEX IF NOT EXISTS review_requests_phone ON review_requests (phone, asked_at)",
             ):
                 store._exec(ddl)
+            for col, decl in (("review_text", "TEXT NOT NULL DEFAULT ''"), ("review_at", "TEXT NOT NULL DEFAULT ''"),
+                              ("review_order", "TEXT NOT NULL DEFAULT ''")):
+                store._ensure_column("customers", col, decl)
             if store.backend == "postgres":
-                for t in ("customers", "tasks"):
+                for t in ("customers", "tasks", "review_requests"):
                     store._exec(f"ALTER TABLE {t} ENABLE ROW LEVEL SECURITY")
             store.schema_done("crm", self.SCHEMA_VERSION)
 
@@ -181,6 +189,8 @@ class Crm:
               COALESCE(NULLIF(c.address, ''), a.last_address, '') AS display_address,
               COALESCE(c.tags, '') AS tags, COALESCE(c.internal_note, '') AS internal_note,
               COALESCE(c.opted_out, 0) AS opted_out,
+              COALESCE(c.review_text, '') AS review_text, COALESCE(c.review_at, '') AS review_at,
+              COALESCE(c.review_order, '') AS review_order,
               COALESCE(a.orders_count, 0) AS orders_count, COALESCE(a.delivered, 0) AS delivered,
               COALESCE(a.delivered_cents, 0) AS delivered_cents, COALESCE(a.returned, 0) AS returned,
               COALESCE(a.cancelled, 0) AS cancelled, a.last_order AS last_order,
@@ -203,7 +213,8 @@ class Crm:
             LEFT JOIN customers c ON c.phone = b.phone"""
 
     CUSTOMER_FIELDS = ("phone", "name", "city", "address", "tags", "internal_note", "opted_out", "orders_count",
-                       "delivered", "delivered_cents", "returned", "cancelled", "last_order", "segment")
+                       "delivered", "delivered_cents", "returned", "cancelled", "last_order", "segment",
+                       "review_text", "review_at", "review_order")
 
     def _customer(self, r: Any) -> dict[str, Any]:
         d = dict(zip(self.CUSTOMER_FIELDS, r))
@@ -236,7 +247,8 @@ class Crm:
             raise CrmError("filtre invalide")
         where, args = self._customer_where(q, tag)
         cols = ("x.phone, x.display_name, x.display_city, x.display_address, x.tags, x.internal_note, x.opted_out, "
-                "x.orders_count, x.delivered, x.delivered_cents, x.returned, x.cancelled, x.last_order, x.segment")
+                "x.orders_count, x.delivered, x.delivered_cents, x.returned, x.cancelled, x.last_order, x.segment, "
+                "x.review_text, x.review_at, x.review_order")
         seg = " AND x.segment = ?" if segment else ""
         nulls = CUSTOMER_SORTS[sort]
         rows = self.store._exec(
@@ -252,7 +264,8 @@ class Crm:
     def get_customer(self, phone: str) -> dict[str, Any] | None:
         row = self.store._exec(
             "SELECT x.phone, x.display_name, x.display_city, x.display_address, x.tags, x.internal_note, x.opted_out, "
-            "x.orders_count, x.delivered, x.delivered_cents, x.returned, x.cancelled, x.last_order, x.segment "
+            "x.orders_count, x.delivered, x.delivered_cents, x.returned, x.cancelled, x.last_order, x.segment, "
+            "x.review_text, x.review_at, x.review_order "
             f"FROM ({self._customers_sql()}) x WHERE x.phone = ?", (phone,), fetch="one")
         return self._customer(row) if row else None
 
@@ -290,6 +303,57 @@ class Crm:
             self.update_customer(phone, opted_out=False)
             return "start"
         return None
+
+    # ================================================================== reviews
+    REVIEW_TAG = "Avis"
+    REVIEW_AFTER_DAYS, REVIEW_UNTIL_DAYS = 3, 30
+
+    def review_candidates(self, now_ts: float, window_s: float, limit: int = 50) -> list[dict[str, Any]]:
+        """Delivered 3–30 days ago, never asked for this order, not STOP, 24 h window open, no review asked to this
+        phone in the last 30 days, no conversation in progress (stage) and no human handling it. One query."""
+        now = now_dt()
+        rows = self.store._exec(
+            "SELECT o.order_number, o.phone, o.name FROM orders o "
+            "JOIN conversations v ON v.phone = o.phone "
+            "LEFT JOIN customers c ON c.phone = o.phone "
+            "WHERE o.status = 'delivered' AND o.delivered_at <> '' AND o.delivered_at <= ? AND o.delivered_at >= ? "
+            "AND COALESCE(c.opted_out, 0) = 0 "
+            "AND v.last_client_at IS NOT NULL AND v.last_client_at > ? "
+            "AND COALESCE(v.stage, '') = '' AND v.taken_over_by IS NULL "
+            "AND NOT EXISTS (SELECT 1 FROM review_requests r WHERE r.order_number = o.order_number) "
+            "AND NOT EXISTS (SELECT 1 FROM review_requests r WHERE r.phone = o.phone AND r.asked_at >= ?) "
+            "AND NOT EXISTS (SELECT 1 FROM orders p WHERE p.phone = o.phone AND p.status IN ('new', 'awaiting_details', 'needs_human')) "
+            "ORDER BY o.delivered_at LIMIT ?",
+            (fmt(now - timedelta(days=self.REVIEW_AFTER_DAYS)), fmt(now - timedelta(days=self.REVIEW_UNTIL_DAYS)),
+             now_ts - window_s, fmt(now - timedelta(days=self.REVIEW_UNTIL_DAYS)), limit * 3), fetch="all")
+        out, seen = [], set()
+        for number, phone, name in rows:  # one request per phone per run
+            if phone not in seen:
+                seen.add(phone)
+                out.append({"order_number": number, "phone": phone, "name": name})
+        return out[:limit]
+
+    def mark_review_asked(self, order_number: str, phone: str) -> bool:
+        """False when another run already asked (the primary key decides)."""
+        row = self.store._exec(
+            "INSERT INTO review_requests (order_number, phone, asked_at) VALUES (?, ?, ?) "
+            "ON CONFLICT (order_number) DO NOTHING RETURNING order_number", (order_number, phone, fmt(now_dt())), fetch="one")
+        return bool(row)
+
+    def save_review(self, order_number: str, phone: str, text: str, declined: bool) -> None:
+        now = fmt(now_dt())
+        text = " ".join(text.split())[:1000]
+        self.store._exec("UPDATE review_requests SET answered_at = ?, reply = ?, declined = ? WHERE order_number = ?",
+                         (now, text, 1 if declined else 0, order_number))
+        if declined:
+            return
+        c = self.get_customer(phone)
+        tags = (c or {}).get("tags") or []
+        if self.REVIEW_TAG not in tags:
+            tags = [*tags, self.REVIEW_TAG]
+        self.update_customer(phone, tags=tags)
+        self.store._exec("UPDATE customers SET review_text = ?, review_at = ?, review_order = ? WHERE phone = ?",
+                         (text, now, order_number, phone))
 
     # ================================================================== tasks
     def _task(self, r: Any) -> dict[str, Any]:

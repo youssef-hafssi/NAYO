@@ -25,6 +25,9 @@ log = logging.getLogger("nayo.flow")
 
 ORDER_RE = re.compile(r"\bNAYO\s*-?\s*(W?\d{3,8})\b", re.IGNORECASE)
 WINDOW_S = 24 * 3600
+REVIEW_REPLY_S = 3 * 24 * 3600  # a reply later than this is not taken as the review
+REVIEW_DECLINE = {"non", "non merci", "no", "la", "la shukran", "la chokran", "la merci", "machi daba", "pas maintenant",
+                  "لا", "لا شكرا", "no thanks"}
 REPLY_LANGUAGE = {
     "fr": "French",
     "darija": "Moroccan Darija in Latin letters (Arabizi)",
@@ -126,7 +129,51 @@ class Bot:
             self._send(phone, t("non_text", lang))
             return
 
+        if (conv.stage or "").startswith("review:") and self._take_review(phone, text, conv, lang):
+            return
+
         self._route(phone, text, conv, lang)
+
+    # ------------------------------------------------------------------ reviews (asked once, never published)
+    def _crm_obj(self) -> Any:
+        from .crm import Crm
+
+        if self._crm is None or self._crm.store is not self.store:
+            self._crm = Crm(self.store)
+        return self._crm
+
+    def ask_reviews(self, limit: int = 50) -> int:
+        """Daily (Vercel Cron): 3 days after delivery, inside the 24 h window only (no template), STOP respected,
+        asked once per order. The client's next message is stored as their review (see _take_review)."""
+        crm, asked = self._crm_obj(), 0
+        for c in crm.review_candidates(self.clock(), WINDOW_S, limit):
+            if not crm.mark_review_asked(c["order_number"], c["phone"]):
+                continue  # another run got there first
+            conv = self.store.get_conv(c["phone"])
+            if self._send(c["phone"], t("review_ask", conv.lang or "fr", first=first_name(c["name"]))):
+                self.store.update_conv(c["phone"], stage=f"review:{c['order_number']}:{int(self.clock())}")
+                asked += 1
+        if asked:
+            log.info("review asked to %d client(s)", asked)
+        return asked
+
+    def _take_review(self, phone: str, text: str, conv: Conversation, lang: str) -> bool:
+        """True when the message was the review (or a "no thanks"); False → handled as a normal message."""
+        _, number, since = (conv.stage.split(":") + ["", ""])[:3]
+        self.store.update_conv(phone, stage="")
+        conv.stage = ""
+        expired = not since.isdigit() or self.clock() - int(since) > REVIEW_REPLY_S
+        if expired or ORDER_RE.search(text) or "?" in text or "؟" in text:
+            return False  # a question or another order: not a review
+        order = self.orders.get(number) or {}
+        declined = normalize_name(text) in REVIEW_DECLINE
+        self._crm_obj().save_review(number, phone, text, declined)
+        log.info("review %s from %s for %s", "declined" if declined else "received", _mask(phone), number)
+        if declined:
+            self._send(phone, t("review_declined", lang, first=first_name(order.get("name", ""))))
+        else:
+            self._send(phone, t("review_thanks", lang))
+        return True
 
     # ------------------------------------------------------------------ order matching
     def _route(self, phone: str, text: str, conv: Conversation, lang: str) -> None:

@@ -1,7 +1,9 @@
 import { CircleCheck, Star } from 'lucide-react'
-import { REVIEWS } from '../content'
+import { REVIEWS, SHOW_REVIEWS } from '../content'
 
+/** Kept for real reviews later: renders nothing while SHOW_REVIEWS is false or there are none. */
 export function Reviews() {
+  if (!SHOW_REVIEWS || REVIEWS.length === 0) return null
   return (
     <section id="avis" aria-labelledby="avis-title" className="bg-ivory pb-24 lg:h-229 lg:pb-0">
       <div className="mx-auto w-full max-w-1024 px-16 md:px-24 lg:px-0">
@@ -35,7 +37,7 @@ export function Reviews() {
                   <p className="lg:hidden">“{r.quote}”</p>
                 </blockquote>
                 <figcaption className="mt-12 flex flex-wrap items-center gap-x-11 lg:mt-12 lg:flex-nowrap">
-                  <img src={r.avatar} alt="" loading="lazy" className="size-38 rounded-full object-cover" width={76} height={76} />
+                  {r.avatar && <img src={r.avatar} alt="" loading="lazy" className="size-38 rounded-full object-cover" width={76} height={76} />}
                   <span className="fs-14.5 font-semibold text-ink">{r.name}</span>
                   <span className="ml-auto flex items-center gap-6 fs-12.5 font-[500] text-[#2a0a0c] md:mt-4 md:ml-0 md:w-full md:pl-49 lg:mt-0 lg:ml-34 lg:w-auto lg:pl-0">
                     <CircleCheck className="size-17 fill-[#3a0a10] text-ivory" strokeWidth={2.2} aria-hidden />
