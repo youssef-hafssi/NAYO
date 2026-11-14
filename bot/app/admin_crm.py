@@ -335,5 +335,5 @@ def add_crm_routes(router: APIRouter, svc: Callable[[], Any], current_admin: Any
     @router.get("/team")
     def team(admin: dict = Depends(current_admin)) -> dict[str, Any]:
         """Names only (to assign a follow-up)."""
-        rows = svc().store._exec("SELECT name FROM admin_users ORDER BY name", fetch="all")
+        rows = svc().store._exec("SELECT name FROM admin_users WHERE COALESCE(disabled, 0) = 0 ORDER BY name", fetch="all")
         return {"names": [r[0] for r in rows]}

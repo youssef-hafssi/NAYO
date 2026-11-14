@@ -21,6 +21,8 @@ const PurchaseOrderDetail = lazy(PAGES.purchaseOrder)
 const Finance = lazy(PAGES.finance)
 const Reports = lazy(PAGES.reports)
 const Account = lazy(PAGES.account)
+const Team = lazy(PAGES.team)
+const Settings = lazy(PAGES.settings)
 const ClosingPrint = lazy(() => import('./ClosingPrint'))
 const DeliveryPrint = lazy(() => import('./DeliveryPrint'))
 
@@ -102,6 +104,8 @@ export default function AdminApp() {
           <Route path="finance" element={page(<Finance />)} />
           <Route path="reports" element={page(<Reports />)} />
           <Route path="plus" element={page(<Account />, false)} />
+          <Route path="team" element={page(<Team />, false)} />
+          <Route path="settings" element={page(<Settings />, false)} />
           <Route path="*" element={<Navigate to="inbox" replace />} />
         </Route>
       </Routes>

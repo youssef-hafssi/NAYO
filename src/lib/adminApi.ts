@@ -388,6 +388,16 @@ export type ClosingReport = {
 export type ReportName = 'sales' | 'stock' | 'delivery' | 'margin'
 type ReportOf = { sales: SalesReport; stock: StockReport; delivery: DeliveryReport; margin: MarginReport }
 
+export type Member = { id: string; email: string; name: string; role: Role; active: boolean; last_seen_at: number | null; created_at: number | null }
+export type AuditRow = { at: number; admin_name: string; action: string; entity: string; entity_id: string; details: string }
+export type AppSettings = {
+  company_name: string
+  company_address: string
+  company_phone: string
+  stock_low_threshold: number
+  followup_stale_hours: number
+}
+
 export type Supplier = { id: number; name: string; phone: string; city: string; note: string; active: boolean; created_at: string }
 export type POStatus = 'draft' | 'ordered' | 'partially_received' | 'received' | 'cancelled'
 export type PurchaseOrder = {
@@ -567,6 +577,18 @@ export const adminApi = {
   reportCsvUrl: (name: ReportName, p: Period) => `/bot-api/admin/reports/${name}.csv?${periodQuery(p)}`,
   closing: (month: string) => get<ClosingReport>(`/reports/closing?month=${encodeURIComponent(month)}`),
   closingCsvUrl: (month: string) => `/bot-api/admin/reports/closing.csv?month=${encodeURIComponent(month)}`,
+  members: () => get<{ items: Member[]; me: string }>('/team/members'),
+  addMember: (b: { email: string; name: string; role: Role }) =>
+    call<{ member: Member; temporary_password: string }>('/team/members', { method: 'POST', body: b }),
+  editMember: (id: string, b: { name?: string; role?: Role; active?: boolean }) =>
+    call<{ member: Member }>(`/team/members/${encodeURIComponent(id)}`, { method: 'PATCH', body: b }),
+  resetMemberPassword: (id: string) =>
+    call<{ temporary_password: string }>(`/team/members/${encodeURIComponent(id)}/reset-password`, { method: 'POST' }),
+  audit: (f: { admin_name?: string; entity?: string; frm?: string; to?: string }, offset = 0) =>
+    get<{ items: AuditRow[]; has_more: boolean }>(`/audit?${qs(f)}&limit=50&offset=${offset}`),
+  auditFacets: () => get<{ admins: string[]; entities: string[] }>('/audit/facets'),
+  settings: () => get<AppSettings>('/settings'),
+  editSettings: (b: Partial<AppSettings>) => call<AppSettings>('/settings', { method: 'PATCH', body: b }),
   carriers: (includeInactive = false) => get<{ items: Carrier[] }>(`/carriers${includeInactive ? '?include_inactive=true' : ''}`),
   createCarrier: (b: CarrierInput) => call<Carrier>('/carriers', { method: 'POST', body: b }),
   editCarrier: (id: number, b: Partial<CarrierInput>) => call<Carrier>(`/carriers/${id}`, { method: 'PATCH', body: b }),

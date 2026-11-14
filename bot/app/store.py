@@ -23,7 +23,7 @@ FIRST_ORDER_NUMBER = 1001
 
 # Bump when SCHEMA / MIGRATIONS / RLS_TABLES change: the DDL then runs once on the next start-up.
 # (Each component keeps its own version under the settings key "schema:<name>".)
-STORE_SCHEMA_VERSION = 3
+STORE_SCHEMA_VERSION = 4
 
 SCHEMA = [
     "CREATE TABLE IF NOT EXISTS counters (name TEXT PRIMARY KEY, value BIGINT NOT NULL)",
@@ -58,6 +58,7 @@ SCHEMA = [
     )""",
     "CREATE INDEX IF NOT EXISTS audit_entity ON audit_log (entity, entity_id, at)",
     "CREATE INDEX IF NOT EXISTS audit_at ON audit_log (at)",
+    "CREATE INDEX IF NOT EXISTS audit_admin ON audit_log (admin_name, at)",  # audit viewer: filter by member
     "CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL)",
     """CREATE TABLE IF NOT EXISTS admin_users (
         id TEXT PRIMARY KEY,
@@ -75,6 +76,9 @@ MIGRATIONS = [
     ("conversations", "internal_notes", "TEXT"),  # team-only notes shown in the admin inbox
     ("admin_users", "last_seen_at", "DOUBLE PRECISION"),  # members online in the admin inbox
     ("admin_users", "role", "TEXT"),  # 'owner' | 'agent' (existing users become owners)
+    ("admin_users", "disabled", "INTEGER NOT NULL DEFAULT 0"),  # never deleted: disabled members can't log in
+    ("admin_users", "session_version", "INTEGER NOT NULL DEFAULT 0"),  # bumped → every open session ends
+    ("admin_users", "created_at", "DOUBLE PRECISION"),
 ]
 
 RLS_TABLES = ("counters", "processed_messages", "messages", "conversations", "rate_events", "order_requests",
@@ -427,10 +431,12 @@ class Store:
 
     def get_admin_by_email(self, email: str) -> dict[str, Any] | None:
         row = self._exec(
-            "SELECT id, email, password_hash, name, role FROM admin_users WHERE LOWER(email) = LOWER(?)", (email.strip(),),
+            "SELECT id, email, password_hash, name, role, COALESCE(disabled, 0), COALESCE(session_version, 0) "
+            "FROM admin_users WHERE LOWER(email) = LOWER(?)", (email.strip(),),
             fetch="one",
         )
-        return {"id": row[0], "email": row[1], "password_hash": row[2], "name": row[3], "role": row[4] or "owner"} if row else None
+        return {"id": row[0], "email": row[1], "password_hash": row[2], "name": row[3], "role": row[4] or "owner",
+                "disabled": bool(row[5]), "session_version": int(row[6])} if row else None
 
     def get_admin(self, admin_id: str) -> dict[str, Any] | None:
         row = self._exec(
@@ -438,8 +444,89 @@ class Store:
         )
         return {"id": row[0], "email": row[1], "name": row[2], "role": row[3] or "owner", "password_hash": row[4]} if row else None
 
-    def set_admin_password(self, admin_id: str, password_hash: str) -> None:
-        self._exec("UPDATE admin_users SET password_hash = ? WHERE id = ?", (password_hash, admin_id))
+    def set_admin_password(self, admin_id: str, password_hash: str, end_sessions: bool = True) -> int:
+        """New password; by default every open session of this member ends (returns the new session version)."""
+        row = self._exec(
+            "UPDATE admin_users SET password_hash = ?, session_version = COALESCE(session_version, 0) + ? WHERE id = ? "
+            "RETURNING COALESCE(session_version, 0)", (password_hash, 1 if end_sessions else 0, admin_id), fetch="one")
+        return int(row[0]) if row else 0
+
+    # -- team (owner) --------------------------------------------------------------------------
+    ADMIN_COLS = "id, email, name, role, COALESCE(disabled, 0), last_seen_at, created_at"
+
+    def _admin_row(self, r: Any) -> dict[str, Any]:
+        return {"id": r[0], "email": r[1], "name": r[2], "role": r[3] or "owner", "active": not bool(r[4]),
+                "last_seen_at": r[5], "created_at": r[6]}
+
+    def list_admins(self) -> list[dict[str, Any]]:
+        rows = self._exec(f"SELECT {self.ADMIN_COLS} FROM admin_users ORDER BY COALESCE(disabled, 0), LOWER(name)", fetch="all")
+        return [self._admin_row(r) for r in rows]
+
+    def admin_row(self, admin_id: str) -> dict[str, Any] | None:
+        r = self._exec(f"SELECT {self.ADMIN_COLS} FROM admin_users WHERE id = ?", (admin_id,), fetch="one")
+        return self._admin_row(r) if r else None
+
+    def create_admin(self, email: str, name: str, role: str, password_hash: str) -> dict[str, Any] | None:
+        """None when the email is already used (one statement, the UNIQUE constraint decides)."""
+        import uuid
+
+        aid = uuid.uuid4().hex
+        row = self._exec(
+            "INSERT INTO admin_users (id, email, password_hash, name, role, disabled, session_version, created_at) "
+            "VALUES (?, ?, ?, ?, ?, 0, 0, ?) ON CONFLICT (email) DO NOTHING RETURNING id",
+            (aid, email.strip().lower(), password_hash, name.strip(), role, time.time()), fetch="one")
+        return self.admin_row(aid) if row else None
+
+    def update_admin(self, admin_id: str, *, name: str | None = None, role: str | None = None,
+                     active: bool | None = None) -> None:
+        sets: list[str] = []
+        args: list[Any] = []
+        if name is not None:
+            sets.append("name = ?")
+            args.append(name.strip())
+        if role is not None:
+            sets.append("role = ?")
+            args.append(role)
+        if active is not None:
+            sets.append("disabled = ?")
+            args.append(0 if active else 1)
+            if not active:  # disabling ends every open session at once
+                sets.append("session_version = COALESCE(session_version, 0) + 1")
+        if sets:
+            self._exec(f"UPDATE admin_users SET {', '.join(sets)} WHERE id = ?", (*args, admin_id))
+
+    def active_owners(self) -> int:
+        row = self._exec("SELECT COUNT(*) FROM admin_users WHERE COALESCE(role, 'owner') = 'owner' AND COALESCE(disabled, 0) = 0",
+                         fetch="one")
+        return int(row[0])
+
+    def audit_search(self, *, admin_name: str = "", entity: str = "", frm: float | None = None, to: float | None = None,
+                     limit: int = 50, offset: int = 0) -> dict[str, Any]:
+        where, args = ["1 = 1"], []
+        if admin_name:
+            where.append("admin_name = ?")
+            args.append(admin_name)
+        if entity:
+            where.append("entity = ?")
+            args.append(entity)
+        if frm is not None:
+            where.append("at >= ?")
+            args.append(frm)
+        if to is not None:
+            where.append("at < ?")
+            args.append(to)
+        rows = self._exec(
+            f"SELECT at, admin_name, action, entity, entity_id, details FROM audit_log WHERE {' AND '.join(where)} "
+            "ORDER BY at DESC LIMIT ? OFFSET ?", (*args, limit + 1, offset), fetch="all")
+        items = [{"at": r[0], "admin_name": r[1], "action": r[2], "entity": r[3], "entity_id": r[4], "details": r[5]}
+                 for r in rows[:limit]]
+        return {"items": items, "has_more": len(rows) > limit}
+
+    def audit_facets(self) -> dict[str, list[str]]:
+        """Values for the viewer's filters (two small DISTINCT queries on indexed columns)."""
+        names = [r[0] for r in self._exec("SELECT DISTINCT admin_name FROM audit_log ORDER BY admin_name LIMIT 200", fetch="all")]
+        entities = [r[0] for r in self._exec("SELECT DISTINCT entity FROM audit_log ORDER BY entity LIMIT 100", fetch="all")]
+        return {"admins": names, "entities": entities}
 
     # -- audit log -----------------------------------------------------------------------------
     def audit(self, admin_name: str, action: str, entity: str, entity_id: str = "", details: str = "",
@@ -463,13 +550,16 @@ class Store:
         )
         return [{"at": r[0], "admin_name": r[1], "action": r[2], "details": r[3]} for r in rows]
 
-    def auth_admin(self, admin_id: str, now: float | None = None, touch_every_s: float = 30) -> dict[str, Any] | None:
-        """Loads the logged-in admin and refreshes last_seen_at (at most every 30 s) in ONE statement."""
+    def auth_admin(self, admin_id: str, now: float | None = None, touch_every_s: float = 30,
+                   session_version: int = 0) -> dict[str, Any] | None:
+        """Loads the logged-in admin and refreshes last_seen_at (at most every 30 s) in ONE statement.
+        None when the member is disabled or the session is older than the last password reset / disable."""
         now = now or time.time()
         row = self._exec(
             "UPDATE admin_users SET last_seen_at = CASE WHEN last_seen_at IS NULL OR last_seen_at < ? THEN ? "
-            "ELSE last_seen_at END WHERE id = ? RETURNING id, email, name, role, password_hash",
-            (now - touch_every_s, now, admin_id), fetch="one",
+            "ELSE last_seen_at END WHERE id = ? AND COALESCE(disabled, 0) = 0 AND COALESCE(session_version, 0) = ? "
+            "RETURNING id, email, name, role, password_hash",
+            (now - touch_every_s, now, admin_id, session_version), fetch="one",
         )
         if not row:
             return None
@@ -484,7 +574,8 @@ class Store:
 
     def admins_online(self, within_s: float = 60, now: float | None = None) -> int:
         row = self._exec(
-            "SELECT COUNT(*) FROM admin_users WHERE last_seen_at > ?", ((now or time.time()) - within_s,), fetch="one"
+            "SELECT COUNT(*) FROM admin_users WHERE last_seen_at > ? AND COALESCE(disabled, 0) = 0",
+            ((now or time.time()) - within_s,), fetch="one"
         )
         return int(row[0])
 

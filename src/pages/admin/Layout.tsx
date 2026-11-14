@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useState } from 'react'
 import { NavLink, Outlet, useLocation } from 'react-router-dom'
-import { BarChart3, BellRing, ClipboardList, LayoutDashboard, MessageSquare, MoreHorizontal, Package, ShoppingCart, Truck, Users, Wallet, type LucideIcon } from 'lucide-react'
+import { BarChart3, BellRing, Settings as SettingsIcon, UserCog, ClipboardList, LayoutDashboard, MessageSquare, MoreHorizontal, Package, ShoppingCart, Truck, Users, Wallet, type LucideIcon } from 'lucide-react'
 import { adminApi } from '../../lib/adminApi'
 import { useAuth } from './AdminApp'
 import { preloadRoute } from './preload'
@@ -24,6 +24,8 @@ export const NAV: NavItem[] = [
   { to: '/admin/purchasing', label: 'Achats', icon: ShoppingCart, ownerOnly: true },
   { to: '/admin/finance', label: 'Finance', icon: Wallet, ownerOnly: true },
   { to: '/admin/reports', label: 'Rapports', icon: BarChart3, ownerOnly: true },
+  { to: '/admin/team', label: 'Équipe', icon: UserCog, ownerOnly: true },
+  { to: '/admin/settings', label: 'Réglages', icon: SettingsIcon, ownerOnly: true },
   { to: '/admin/plus', label: 'Plus', icon: MoreHorizontal },
 ]
 

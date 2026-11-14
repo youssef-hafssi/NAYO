@@ -22,6 +22,8 @@ export const PAGES = {
   finance: () => import('./Finance'),
   reports: () => import('./Reports'),
   account: () => import('./Account'),
+  team: () => import('./Team'),
+  settings: () => import('./Settings'),
 }
 
 type Prefetchable = { prefetch: () => void }
@@ -82,6 +84,10 @@ function plan(pathname: string, search = ''): { chunk?: () => Promise<unknown>; 
     }
     case 'plus':
       return { chunk: PAGES.account, queries: [] }
+    case 'team':
+      return { chunk: PAGES.team, queries: owner ? (q.get('tab') === 'audit' ? [adminApi.audit({}), adminApi.auditFacets()] : [adminApi.members()]) : [] }
+    case 'settings':
+      return { chunk: PAGES.settings, queries: owner ? [adminApi.settings()] : [] }
     default:
       return { queries: [] }
   }

@@ -67,13 +67,21 @@ def verify_password(password: str, stored: str) -> bool:
 _DUMMY_HASH = hash_password(uuid.uuid4().hex)  # same timing whether or not the email exists
 
 
-def make_session(secret: str, admin_id: str, ttl_s: int, now: float | None = None) -> str:
-    payload = _b64(json.dumps({"id": admin_id, "exp": int((now or time.time()) + ttl_s)}).encode())
+def make_session(secret: str, admin_id: str, ttl_s: int, now: float | None = None, version: int = 0) -> str:
+    """`version` = the member's session_version: a password reset or a disable bumps it and ends this session."""
+    payload = _b64(json.dumps({"id": admin_id, "exp": int((now or time.time()) + ttl_s), "v": int(version)}).encode())
     sig = _b64(hmac.new(secret.encode(), payload.encode(), hashlib.sha256).digest())
     return f"{payload}.{sig}"
 
 
 def read_session(secret: str, token: str | None, now: float | None = None) -> str | None:
+    found = read_session_v(secret, token, now)
+    return found[0] if found else None
+
+
+def read_session_v(secret: str, token: str | None, now: float | None = None) -> tuple[str, int] | None:
+    """(admin id, session version) of a valid, unexpired, correctly signed token. Tokens issued before versions
+    existed count as version 0."""
     if not secret or not token or "." not in token:
         return None
     payload, sig = token.rsplit(".", 1)
@@ -84,9 +92,12 @@ def read_session(secret: str, token: str | None, now: float | None = None) -> st
         data = json.loads(_unb64(payload))
     except Exception:
         return None
-    if data.get("exp", 0) < (now or time.time()):
+    if data.get("exp", 0) < (now or time.time()) or not data.get("id"):
         return None
-    return data.get("id")
+    try:
+        return str(data["id"]), int(data.get("v", 0))
+    except (TypeError, ValueError):
+        return None
 
 
 # ---------------------------------------------------------------- request bodies
@@ -143,9 +154,9 @@ def build_admin_router(svc: Callable[[], Any], settings: Any) -> APIRouter:
     def current_admin(request: Request) -> dict[str, Any]:
         if not settings.admin_secret:
             raise HTTPException(503, "admin disabled (ADMIN_SECRET not set)")
-        admin_id = read_session(settings.admin_secret, request.cookies.get(COOKIE))
-        # One statement: load the admin and refresh last_seen_at (at most every 30 s).
-        admin = svc().store.auth_admin(admin_id) if admin_id else None
+        found = read_session_v(settings.admin_secret, request.cookies.get(COOKIE))
+        # One statement: load the admin (active, current session version) and refresh last_seen_at (≤ every 30 s).
+        admin = svc().store.auth_admin(found[0], session_version=found[1]) if found else None
         if not admin:
             raise HTTPException(401, "not logged in")
         return admin
@@ -208,12 +219,12 @@ def build_admin_router(svc: Callable[[], Any], settings: Any) -> APIRouter:
             raise HTTPException(429, "Trop de tentatives, réessayez dans 15 minutes.")
         admin = store.get_admin_by_email(body.email)
         ok = verify_password(body.password, admin["password_hash"] if admin else _DUMMY_HASH)
-        if not (ok and admin):
+        if not (ok and admin) or admin["disabled"]:  # a disabled member gets the same answer as a wrong password
             store.hit(f"login:{ip}")
             log.warning("admin login failed")
             raise HTTPException(401, "Email ou mot de passe incorrect.")
-        response.set_cookie(COOKIE, make_session(settings.admin_secret, admin["id"], ttl), max_age=ttl, httponly=True,
-                            secure=_secure(request), samesite="lax", path="/")
+        response.set_cookie(COOKIE, make_session(settings.admin_secret, admin["id"], ttl, version=admin["session_version"]),
+                            max_age=ttl, httponly=True, secure=_secure(request), samesite="lax", path="/")
         store.touch_admin(admin["id"])
         log.info("admin login: %s", admin["name"])
         return {"name": admin["name"], "email": admin["email"]}
@@ -229,13 +240,17 @@ def build_admin_router(svc: Callable[[], Any], settings: Any) -> APIRouter:
                 "online": svc().store.admins_online()}
 
     @router.post("/me/password")
-    def change_password(body: PasswordIn, admin: dict = Depends(current_admin)) -> dict[str, Any]:
+    def change_password(body: PasswordIn, request: Request, response: Response,
+                        admin: dict = Depends(current_admin)) -> dict[str, Any]:
         if not verify_password(body.current, admin["password_hash"]):
             raise HTTPException(400, "Mot de passe actuel incorrect.")
         if body.new == body.current:
             raise HTTPException(400, "Le nouveau mot de passe doit être différent.")
-        svc().store.set_admin_password(admin["id"], hash_password(body.new))
-        _audit(admin, "password.change", "admin_user", admin["id"])
+        # Every other open session (other devices, a leaked cookie) ends; this one gets a fresh cookie.
+        version = svc().store.set_admin_password(admin["id"], hash_password(body.new))
+        response.set_cookie(COOKIE, make_session(settings.admin_secret, admin["id"], ttl, version=version), max_age=ttl,
+                            httponly=True, secure=_secure(request), samesite="lax", path="/")
+        _audit(admin, "password.change", "admin_user", admin["id"], "autres sessions fermées")
         return {"ok": True}
 
     # -- inbox --------------------------------------------------------------------------------
@@ -484,4 +499,7 @@ def build_admin_router(svc: Callable[[], Any], settings: Any) -> APIRouter:
     from .admin_reports import add_reports_routes
 
     add_reports_routes(router, svc, current_admin, owner_only, _audit, delivery)
+    from .admin_team import add_team_routes
+
+    add_team_routes(router, svc, owner_only, _audit)
     return router

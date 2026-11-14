@@ -34,6 +34,18 @@ class CrmError(Exception):
     pass
 
 
+STALE_HOURS_DEFAULT, STALE_HOURS_MAX = 6, 168
+
+
+def stale_hours(raw: Any) -> int:
+    """'À relancer après N heures' (setting followup_stale_hours): 1 to 168, 6 by default."""
+    try:
+        v = int(str(raw))
+    except (TypeError, ValueError):
+        return STALE_HOURS_DEFAULT
+    return v if 1 <= v <= STALE_HOURS_MAX else STALE_HOURS_DEFAULT
+
+
 def now_dt() -> datetime:
     return datetime.now(TZ).replace(tzinfo=None)
 
@@ -367,6 +379,8 @@ class Crm:
         now = now_dt()
         out: list[dict[str, Any]] = []
         x = self.store._exec
+        cfg = self.store.get_settings(["stock_tracking_started", "stock_low_threshold", "followup_stale_hours"])
+        stale_h = stale_hours(cfg.get("followup_stale_hours"))
 
         def add(k: str, kind: str, title: str, phone: str = "", number: str = "", since: str = "") -> None:
             out.append({"key": k, "kind": kind, "title": title, "customer_phone": phone, "order_number": number,
@@ -377,8 +391,9 @@ class Crm:
                 "AND created_at < ? AND created_at > ? "
                 "AND phone NOT IN (SELECT phone FROM customers WHERE opted_out = 1) "  # STOP: no reminder to write
                 "ORDER BY created_at LIMIT 100",
-                (fmt(now - timedelta(hours=6)), fmt(now - timedelta(days=30))), fetch="all"):
-            add(f"stale:{n}", "stale", f"Relancer {name or 'le client'} : {n} sans réponse depuis plus de 6 h", phone, n, created)
+                (fmt(now - timedelta(hours=stale_h)), fmt(now - timedelta(days=30))), fetch="all"):
+            add(f"stale:{n}", "stale", f"Relancer {name or 'le client'} : {n} sans réponse depuis plus de {stale_h} h",
+                phone, n, created)
         for n, name, phone, since in x(
                 "SELECT order_number, name, phone, COALESCE(NULLIF(confirmed_at, ''), created_at) FROM orders "
                 "WHERE status = 'confirmed' AND COALESCE(NULLIF(confirmed_at, ''), created_at) < ? "
@@ -410,7 +425,7 @@ class Crm:
                     (now.strftime("%Y-%m-%d"),), fetch="all"):
                 add(f"po:{number}", "po_late", f"Relancer le fournisseur : {number} attendue le {expected[8:10]}/{expected[5:7]}",
                     since=expected)
-        stock = self.store.get_settings(["stock_tracking_started", "stock_low_threshold"])
+        stock = cfg
         if stock.get("stock_tracking_started") == "1":
             row = x("SELECT balance_after FROM stock_movements ORDER BY id DESC LIMIT 1", fetch="one")
             on_hand = int(row[0]) if row else 0

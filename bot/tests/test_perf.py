@@ -96,7 +96,9 @@ def test_schema_runs_once_then_start_up_is_one_query(tmp_path, monkeypatch):
     DbOrders(second)
     Stock(second)
     assert len(calls) == 1 and "FROM settings WHERE key LIKE" in calls[0]
-    assert second.needs_schema("store", 3) is False and second.needs_schema("store", 4) is True
+    from app.store import STORE_SCHEMA_VERSION as V
+
+    assert second.needs_schema("store", V) is False and second.needs_schema("store", V + 1) is True
 
 
 # ---------------------------------------------------------------- queries per admin request
