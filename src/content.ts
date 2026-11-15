@@ -34,6 +34,8 @@ export const REVIEWS: Review[] = [
     city: '',
     lang: 'darija',
     rating: 5,
+    photo: '/assets/reviews/salma-b-240.webp',
+    photoAlt: 'Photo envoyée par Salma B.',
   },
   {
     text: "Le plus incroyable c'est que ma dert ta routine spéciale 😂 Kanst3mlo ghir comme mon déo chaque matin. Après 6 semaines, bdit kanchouf une différence f l'apparence des taches. Genre je prends soin de mes aisselles sans même y penser 😍",
@@ -41,6 +43,8 @@ export const REVIEWS: Review[] = [
     city: '',
     lang: 'darija',
     rating: 5,
+    photo: '/assets/reviews/imane-e-320.webp',
+    photoAlt: 'Photo envoyée par Imane E. : NAYO dans sa salle de bain',
   },
   {
     text: "Déjà la ri7a Velvet Rose wa3raaa 😭🌹 et le packaging trop cute ! Mais après 4 semaines, ila kan loun dial mes aisselles kayban plus uniforme, alors là c'est vraiment le combo parfait. Le genre de produit li katbghi tb9ay tsta3mlih ❤️",
@@ -48,8 +52,8 @@ export const REVIEWS: Review[] = [
     city: '',
     lang: 'darija',
     rating: 5,
-    photo: '/assets/reviews/sarah-m-320.webp',
-    photoAlt: 'Photo envoyée par Sarah M. (visage flouté)',
+    photo: '/assets/reviews/sarah-m-car-320.webp',
+    photoAlt: 'Photo envoyée par Sarah M. : NAYO dans sa voiture',
   },
 ]
 
