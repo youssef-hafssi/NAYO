@@ -495,3 +495,17 @@ def test_new_whatsapp_order_is_mirrored_to_the_sheet(store, wa, ai, clock):
     bot.handle(IncomingMessage("wamid.mirror", CLIENT, "text", "bghit commande akhra"))
     new = [p["order"] for p in posted if p["order"]["order_number"] != "NAYO-0901"]
     assert new and new[0]["status"] == "awaiting_details" and new[0]["notes"] == "[bot] commande créée par WhatsApp"
+
+
+def test_address_alone_is_enough_and_fills_the_city(say, orders, wa, ai):
+    orders.add("NAYO-1043", "Salma Kettani", CLIENT)
+    ai.push("confirm", "Merci !")
+    say("Bonjour NAYO, je confirme ma commande NAYO-1043 – 209 MAD – Salma Kettani")
+    assert "adresse complète" in wa.to(CLIENT)[-1]
+    ai.push("provide_details", "ok", address="Hay Salam, rue 12, Agadir")
+    say("hay salam rue 12 agadir")
+    assert wa.to(CLIENT)[-1] == "Salma Kettani, Hay Salam, rue 12, Agadir, 209 MAD à la livraison — c'est bon ?"
+    assert orders.get("NAYO-1043")["city"] == "Agadir"
+    ai.push("confirm", "Super")
+    say("oui")
+    assert status(orders) == "confirmed"

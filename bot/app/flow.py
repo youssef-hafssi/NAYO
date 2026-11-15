@@ -12,6 +12,7 @@ import time
 from typing import Any, Callable
 
 from .ai import AI, AIError, AIResult
+from .cities import city_in_address, detect_city
 from .orders import create_bot_order
 from .stock import InsufficientStock
 from .phone import normalize_phone
@@ -389,6 +390,10 @@ class Bot:
             updates["city"] = r.city
         if r.address and normalize_name(r.address) != normalize_name(order.get("address", "")):
             updates["address"] = r.address
+            if not updates.get("city") and not order.get("city"):
+                found = detect_city(r.address)
+                if found:
+                    updates["city"] = found
         if updates:
             self.orders.update(order["order_number"], **updates)
             order.update(updates)
@@ -398,7 +403,7 @@ class Bot:
             self._send(phone, r.reply)
             return
 
-        if r.intent == "confirm" and conv.stage == "await_yes" and not changed and order.get("city") and order.get("address"):
+        if r.intent == "confirm" and conv.stage == "await_yes" and not changed and order.get("address"):
             if not self._confirm_with_stock(phone, order, conv, lang, text):
                 return
             self.store.update_conv(phone, stage="")
@@ -468,9 +473,9 @@ class Bot:
         if kind == "same_addr":  # we proposed the previous order's address
             if r.intent == "confirm" and not (r.city or r.address):
                 prev = self.orders.get(arg)
-                if prev and prev.get("city") and prev.get("address"):
-                    self.orders.update(number, city=prev["city"], address=prev["address"])
-                    order.update(city=prev["city"], address=prev["address"])
+                if prev and prev.get("address"):
+                    self.orders.update(number, city=prev.get("city", ""), address=prev["address"])
+                    order.update(city=prev.get("city", ""), address=prev["address"])
                     self._set_stage(phone, conv, "")
                     self._advance(phone, order, conv, lang, prefix=[], greet=False)  # recap, then waits for "yes"
                     return None
@@ -527,9 +532,9 @@ class Bot:
         self, phone: str, order: dict, conv: Conversation, lang: str, prev_number: str, prefix: list[str]
     ) -> None:
         prev = self.orders.get(prev_number) if prev_number else None
-        if prev and prev.get("city") and prev.get("address"):
+        if prev and prev.get("address"):
             self._set_stage(phone, conv, f"same_addr:{prev_number}")
-            ask = t("same_address", lang, city=prev["city"], address=prev["address"])
+            ask = t("same_address", lang, place=place(prev.get("city", ""), prev["address"]))
         else:
             self._set_stage(phone, conv, "details")
             ask = t("ask_details", lang)
@@ -553,13 +558,12 @@ class Bot:
             self.orders.update(number, status="awaiting_details")
             order["status"] = "awaiting_details"
 
-        if city and address:
+        if address:  # the address is complete on its own; the city is only shown when it adds something
             recap = t(
                 "recap",
                 lang,
                 name=order["name"],
-                city=city,
-                address=address,
+                place=place(city, address),
                 qty_part=t("qty_part", lang, qty=q) if q > 1 else "",
                 total=order_total(q),
             )
@@ -572,8 +576,6 @@ class Bot:
             ask = t("greet_ask_details", lang, first=first_name(order["name"]))
         elif city:
             ask = t("ask_address", lang, city=city)
-        elif address:
-            ask = t("ask_city", lang)
         else:
             ask = t("ask_details", lang)
         self._send(phone, "\n".join(prefix + [ask]))
@@ -679,6 +681,12 @@ class Bot:
         self.store.hit(f"reply:{phone}", now)
         self.store.add_message(phone, "bot", body, keep=self.history_size, now=now + 0.000001)
         return self.wa.send_text(phone, body)
+
+
+def place(city: str, address: str) -> str:
+    """"Agadir, Hay Salam rue 12" — or the address alone when it already names the city (or none is known)."""
+    city, address = (city or "").strip(), (address or "").strip()
+    return address if not city or city_in_address(city, address) else f"{city}, {address}"
 
 
 def _int(v: Any, default: int) -> int:

@@ -64,10 +64,10 @@ T: dict[str, dict[str, str]] = {
         "en": "How many NAYO would you like?",
     },
     "same_address": {
-        "fr": "Même adresse : {city}, {address} ?",
-        "darija": "Nfs l'adresse: {city}, {address}?",
-        "ar": "نفس العنوان: {city}، {address}؟",
-        "en": "Same address: {city}, {address}?",
+        "fr": "Même adresse : {place} ?",
+        "darija": "Nfs l'adresse: {place}?",
+        "ar": "نفس العنوان: {place}؟",
+        "en": "Same address: {place}?",
     },
     "open_order_exists": {
         "fr": "Vous avez déjà une commande en cours ({number}, {qty} × NAYO). Voulez-vous changer la quantité ?",
@@ -93,14 +93,14 @@ T: dict[str, dict[str, str]] = {
         "ar": "شكرا! باش نتأكدو، عافاك كتب لينا السمية كاملة اللي دخلتي فالطلب.",
     },
     "greet_ask_details": {
-        "fr": "Merci {first} pour votre commande NAYO ! 😊 Pour la livraison, envoyez-nous votre ville et votre adresse complète.",
-        "darija": "Choukran {first} 3la la commande dyal NAYO! 😊 3afak sift lina lmdina w l'adresse kamla bach nwslouha lik.",
-        "ar": "شكرا {first} على الطلب ديال NAYO! 😊 عافاك صيفط لينا المدينة والعنوان كامل باش نوصلوه ليك.",
+        "fr": "Merci {first} pour votre commande NAYO ! 😊 Pour la livraison, envoyez-nous votre adresse complète (quartier, rue, ville).",
+        "darija": "Choukran {first} 3la la commande dyal NAYO! 😊 3afak sift lina l'adresse kamla (l7ay, zan9a, lmdina) bach nwslouha lik.",
+        "ar": "شكرا {first} على الطلب ديال NAYO! 😊 عافاك صيفط لينا العنوان كامل (الحي، الزنقة، المدينة) باش نوصلوه ليك.",
     },
     "ask_details": {
-        "fr": "Pour la livraison, envoyez-nous votre ville et votre adresse complète, s'il vous plaît.",
-        "darija": "3afak sift lina lmdina w l'adresse kamla dyal la livraison.",
-        "ar": "عافاك صيفط لينا المدينة والعنوان كامل ديال التوصيل.",
+        "fr": "Pour la livraison, envoyez-nous votre adresse complète (quartier, rue, ville), s'il vous plaît.",
+        "darija": "3afak sift lina l'adresse kamla dyal la livraison (l7ay, zan9a, lmdina).",
+        "ar": "عافاك صيفط لينا العنوان كامل ديال التوصيل (الحي، الزنقة، المدينة).",
     },
     "ask_city": {
         "fr": "Merci ! Dans quelle ville doit-on livrer ?",
@@ -113,9 +113,9 @@ T: dict[str, dict[str, str]] = {
         "ar": "شكرا! شنو العنوان كامل ف{city} (الحي، الزنقة، الرقم)؟",
     },
     "recap": {
-        "fr": "{name}, {city}, {address}, {qty_part}{total} MAD à la livraison — c'est bon ?",
-        "darija": "{name}, {city}, {address}, {qty_part}{total} MAD f la livraison — mzyan haka?",
-        "ar": "{name}، {city}، {address}، {qty_part}{total} درهم عند التوصيل — واش هكا مزيان؟",
+        "fr": "{name}, {place}, {qty_part}{total} MAD à la livraison — c'est bon ?",
+        "darija": "{name}, {place}, {qty_part}{total} MAD f la livraison — mzyan haka?",
+        "ar": "{name}، {place}، {qty_part}{total} درهم عند التوصيل — واش هكا مزيان؟",
     },
     "qty_part": {
         "fr": "{qty} × NAYO, ",

@@ -85,7 +85,9 @@ def login(c, who="owner"):
 
 
 def add(orders, n, status, city="Agadir", qty=1, created=None):
-    orders.append({"order_number": n, "created_at": created or fmt(now_dt() - timedelta(minutes=5)), "name": "C",
+    # "a few minutes ago", but never before today's midnight (the test may run just after 00:00)
+    recent = max(now_dt() - timedelta(minutes=5), now_dt().replace(hour=0, minute=0, second=0, microsecond=0))
+    orders.append({"order_number": n, "created_at": created or fmt(recent), "name": "C",
                    "phone": "212611111111", "quantity": qty, "total": qty * 189 + 20, "status": "new", "city": city})
     if status != "new":
         orders.update(n, status=status)

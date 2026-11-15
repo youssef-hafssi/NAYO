@@ -109,17 +109,33 @@ def test_express_order_city_and_address_are_validated(client):
         assert set(r.json()["fields"]) <= {"city", "address"}, r.json()
 
 
-def test_express_order_bot_sends_the_recap_and_only_asks_yes(client, orders, say, wa, ai):
+def test_express_order_address_only_fills_the_city_and_only_asks_yes(client, orders, say, wa, ai):
+    """The landing form sends the address only ("Quartier, rue, ville"): no city question, recap, then "oui"."""
     from .conftest import CLIENT
 
-    n = client.post("/orders", json=order(quantity=1, total=209, subtotal=189, city="Agadir", address="Hay Salam, rue 12"),
+    n = client.post("/orders", json=order(quantity=1, total=209, subtotal=189, address="Hay Salam, rue 12, Agadir"),
                     headers=H).json()["orderNumber"]
+    assert orders.get(n)["city"] == "Agadir"  # filled from the address (reports, delivery)
     ai.push("confirm", "Merci !")
     say(f"Bonjour NAYO, je confirme ma commande {n} – 209 MAD – Salma Kettani")
     recap = wa.to(CLIENT)[-1]
-    assert "Agadir" in recap and "Hay Salam, rue 12" in recap and "209 MAD" in recap and "c'est bon" in recap
-    assert "ville" not in recap.lower()  # nothing left to ask
+    assert recap == "Salma Kettani, Hay Salam, rue 12, Agadir, 209 MAD à la livraison — c'est bon ?"  # city not repeated
     assert orders.get(n)["status"] == "awaiting_details"
     ai.push("confirm", "Super")
     say("oui")
     assert orders.get(n)["status"] == "confirmed"
+
+
+def test_express_order_unknown_city_is_left_empty_and_never_asked(client, orders, say, wa, ai):
+    from .conftest import CLIENT
+
+    n = client.post("/orders", json=order(quantity=1, total=209, subtotal=189, address="Douar Ait Ali, près de la mosquée"),
+                    headers=H).json()["orderNumber"]
+    assert orders.get(n)["city"] == ""
+    ai.push("confirm", "Merci !")
+    say(f"je confirme ma commande {n}")
+    recap = wa.to(CLIENT)[-1]
+    assert recap.startswith("Salma Kettani, Douar Ait Ali, près de la mosquée, 209 MAD") and "ville" not in recap.lower()
+    ai.push("confirm", "Super")
+    say("oui")
+    assert orders.get(n)["status"] == "confirmed" and orders.get(n)["city"] == ""

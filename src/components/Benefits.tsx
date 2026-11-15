@@ -1,15 +1,15 @@
 import { Clock, Feather, Sparkle } from 'lucide-react'
 
 const ITEMS = [
-  { Icon: Sparkle, title: 'Éclaircit le teint', text: 'Réduit visiblement les zones sombres.' },
-  { Icon: Feather, title: 'Respecte la peau', text: 'Formule douce et non irritante.' },
-  { Icon: Clock, title: 'Fraîcheur longue durée', text: 'Restez fraîche et confiante 24h.' },
+  { Icon: Sparkle, title: 'Unifie progressivement le teint', text: 'Grâce à une exfoliation en douceur.' },
+  { Icon: Feather, title: 'Formule douce', text: 'Pensée pour un usage quotidien.' },
+  { Icon: Clock, title: 'Fraîcheur toute la journée', text: 'Du matin au soir.' },
 ]
 
 export function Benefits() {
   return (
     <section id="benefices" aria-label="Bénéfices" className="bg-ivory">
-      <ul className="mx-auto grid w-full max-w-1024 gap-14 px-20 py-28 md:grid-cols-3 md:gap-0 md:px-24 lg:h-99 lg:grid-cols-[calc(var(--spacing)*334)_calc(var(--spacing)*313)_1fr] lg:px-0 lg:py-0 lg:pt-16 lg:pb-0 lg:pl-66 lg:items-start">
+      <ul className="mx-auto grid w-full max-w-1024 gap-14 px-20 py-28 md:grid-cols-3 md:gap-0 md:px-24 lg:h-99 lg:grid-cols-[calc(var(--spacing)*372)_calc(var(--spacing)*290)_1fr] lg:px-0 lg:py-0 lg:pt-16 lg:pb-0 lg:pl-66 lg:items-start">
         {ITEMS.map(({ Icon, title, text }, i) => (
           <li
             key={title}

@@ -2,47 +2,42 @@ import { ArrowRight } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import { ORDER_PATH } from '../content'
 
+/* Description + the owner's before/after photos (Semaine 1 / Semaine 4, labels inside the images; illustrative). */
+
+const PHOTOS = [
+  { src: 'semaine-1', alt: 'Aisselle en semaine 1 d’utilisation de NAYO' },
+  { src: 'semaine-4', alt: 'Aisselle en semaine 4 d’utilisation de NAYO' },
+]
+
 export function Editorial() {
   return (
     <section aria-labelledby="editorial-title" className="bg-ivory">
-      <div className="mx-auto flex w-full max-w-1024 flex-col gap-28 px-16 pt-4 md:flex-row md:items-center md:gap-36 md:px-24 lg:h-276 lg:gap-0 lg:px-0 lg:pt-0 lg:pl-16">
-        {/* Photo card */}
-        <figure
-          data-anim="reveal-photo"
-          className="relative aspect-[537/276] w-full shrink-0 overflow-hidden rounded-16 md:w-[54%] lg:w-537"
-        >
-          <img
-            src="/assets/editorial.jpg"
-            alt="Aisselle nette et unifiée après utilisation de NAYO"
-            loading="lazy"
-            width={538}
-            height={277}
-            className="size-full object-cover"
-          />
-          {/* Before inset */}
-          <div className="absolute top-[51.5%] left-[5.4%] aspect-[100/117] w-[18.6%] overflow-hidden rounded-12 border-[1.5px] border-[#f4e3d8] shadow-[0_6px_18px_rgba(0,0,0,0.25)]">
-            <img src="/assets/avant.jpg" alt="Aisselle avant utilisation" loading="lazy" className="size-full object-cover" />
-            <span className="absolute bottom-[4%] left-1/2 -translate-x-1/2 rounded-pill bg-white px-9 fs-13 lh-21 font-semibold text-ink">
-              Avant
-            </span>
+      <div className="mx-auto flex w-full max-w-1024 flex-col gap-28 px-16 pt-4 pb-28 md:flex-row md:items-center md:gap-36 md:px-24 md:pb-36 lg:gap-0 lg:px-0 lg:pl-16">
+        {/* Semaine 1 / Semaine 4: side by side on desktop, stacked on phones */}
+        <figure className="w-full shrink-0 md:w-[54%] lg:w-537">
+          <div className="grid gap-10 sm:grid-cols-2 md:gap-12">
+            {PHOTOS.map((p) => (
+              <div key={p.src} data-anim="reveal-photo" className="overflow-hidden rounded-16 bg-[#efe3dc]">
+                <img
+                  src={`/assets/${p.src}-600.webp`}
+                  srcSet={`/assets/${p.src}-600.webp 600w, /assets/${p.src}-1199.webp 1199w`}
+                  sizes="(min-width: 1024px) 262px, (min-width: 640px) 50vw, 100vw"
+                  alt={p.alt}
+                  loading="lazy"
+                  width={1199}
+                  height={1312}
+                  className="block h-auto w-full"
+                />
+              </div>
+            ))}
           </div>
-          {/* Arrow + Après */}
-          <svg
-            className="absolute top-[60.5%] left-[25.8%] w-[11.4%]"
-            viewBox="0 0 62 40"
-            fill="none"
-            aria-hidden
-          >
-            <path d="M2 37c22 0 41-10 54-31" stroke="#fff" strokeWidth="2" strokeLinecap="round" />
-            <path d="M46.5 6.5L56.8 4.4 58.4 14.6" stroke="#fff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-          </svg>
-          <figcaption className="absolute top-[83.3%] left-[27.4%] fs-19 font-medium text-white md:fs-14 lg:fs-19">
-            Après
+          <figcaption className="mt-8 text-center fs-13 lh-18 text-[#5a4446]">
+            Images à titre illustratif. Résultats variables selon les personnes.
           </figcaption>
         </figure>
 
         {/* Copy */}
-        <div className="px-8 pb-8 md:px-0 lg:ml-49 lg:pt-12">
+        <div className="px-8 md:px-0 lg:ml-49">
           <h2 id="editorial-title" data-anim="reveal" className="serif-tight fs-30 lh-32 text-ink-title md:fs-30 md:lh-32 lg:fs-34.5 lg:lh-35 lg:font-[620] lg:tracking-[-0.056em]">
             Le déodorant
             <br />

@@ -8,8 +8,7 @@ import { Editorial } from '../components/Editorial'
 import { TrustStrip } from '../components/TrustStrip'
 import { Reviews } from '../components/Reviews'
 import { ExpressCheckout } from '../components/ExpressCheckout'
-import { BeforeAfter } from '../components/BeforeAfter'
-import { WhyNayo } from '../components/WhyNayo'
+
 import { Faq } from '../components/Faq'
 import { Footer } from '../components/Footer'
 
@@ -89,9 +88,7 @@ export default function Landing() {
         <ExpressCheckout />
         <Benefits />
         <Editorial />
-        <BeforeAfter />
-        <WhyNayo />
-        {/* hidden until real, approved reviews exist (content.ts → SHOW_REVIEWS) */}
+        {/* real reviews only (content.ts → REVIEWS); brand statements while there are none */}
         <Reviews />
         <Faq />
       </main>

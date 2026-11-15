@@ -5,10 +5,15 @@ Pixel-accurate recreation of two approved designs (landing + checkout) for the N
 ## Status
 - Landing page (`/`): built and screenshot-matched to the reference at 1024px.
 - Owner-approved landing changes (override the screenshots for these parts only): trust strip right below the hero
-  (Livraison rapide · Paiement à la livraison · Confirmation sur WhatsApp), express checkout `#commander` (name, phone,
-  city, address, qty → same POST /orders + success screen as /commande), before/after `semaine-1/4-*.webp` with the
-  "Images à titre illustratif" line, "Pourquoi NAYO" (brand statements + face-blurred `nayo-selfie-*.webp`).
-  Reviews are hidden (`SHOW_REVIEWS` in content.ts): only real, approved reviews may ever be shown there.
+  (Livraison rapide · Paiement à la livraison · Confirmation sur WhatsApp); express checkout `#commander` (name, phone,
+  ONE address field "Quartier, rue, ville", qty → same POST /orders + success screen as /commande; the hero button
+  scrolls to it); the editorial photo is the Semaine 1 / Semaine 4 pair + "Images à titre illustratif" line (old
+  avant/après images removed); "Avis" section with the face-blurred `nayo-selfie-*.webp`. Its cards show ONLY real
+  reviews from `REVIEWS` in content.ts (copied word for word from admin → Clients → "Avis"; never write one); while
+  it is empty they show the 3 brand statements (no quotes, names or stars). Benefits / hero perks: "Unifie
+  progressivement le teint", "Formule douce", "Fraîcheur toute la journée".
+- Bot: an address alone is a complete delivery address (recap, then "oui"); the city column is filled from it when it
+  names a known Moroccan city (`bot/app/cities.py`), otherwise left empty — never asked separately.
 - Formula wording: "éclaircit / unifie le teint" (never "blanchit"); only claim = Super Fruit Enzyme Triple Blend +
   citric acid gently exfoliate. Unblurred source photos live in `design/originals/` (git-ignored, never in public/).
 - Checkout (`/commande`): built and screenshot-matched to the reference at 1536px.

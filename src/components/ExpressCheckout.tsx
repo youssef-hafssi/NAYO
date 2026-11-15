@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react'
 import { ArrowRight, CircleCheck, Loader2, Minus, Plus } from 'lucide-react'
 import { PRODUCT } from '../content'
-import { ADDRESS_MAX, ADDRESS_MIN, CITY_MAX, CITY_MIN, fmt, isValidPhone, MAX_QTY, normalizePhone, WHATSAPP_NUMBER, whatsappUrl } from '../lib/checkout'
+import { ADDRESS_MAX, ADDRESS_MIN, fmt, isValidPhone, MAX_QTY, normalizePhone, WHATSAPP_NUMBER, whatsappUrl } from '../lib/checkout'
 import { keepFlushing, newClientId, submitOrder, wakeBot } from '../lib/orders'
 import { WhatsAppGlyph } from './WhatsAppGlyph'
 
@@ -10,16 +10,16 @@ import { WhatsAppGlyph } from './WhatsAppGlyph'
  * sends the recap on WhatsApp and asks "oui". Same success screen and WhatsApp confirmation link.
  */
 
-type Errors = Partial<Record<'name' | 'phone' | 'city' | 'address', string>>
-const FIELDS: { id: keyof Errors; label: string; type?: string; inputMode?: 'tel'; autoComplete: string; max: number }[] = [
+type Errors = Partial<Record<'name' | 'phone' | 'address', string>>
+const FIELDS: { id: keyof Errors; label: string; type?: string; inputMode?: 'tel'; autoComplete: string; max: number; placeholder?: string }[] = [
   { id: 'name', label: 'Nom complet', autoComplete: 'name', max: 80 },
   { id: 'phone', label: 'Téléphone', type: 'tel', inputMode: 'tel', autoComplete: 'tel', max: 20 },
-  { id: 'city', label: 'Ville', autoComplete: 'address-level2', max: CITY_MAX },
-  { id: 'address', label: 'Adresse', autoComplete: 'street-address', max: ADDRESS_MAX },
+  // One address field: the bot finds the city in it (for reports / delivery) and never asks for it separately.
+  { id: 'address', label: 'Adresse', autoComplete: 'street-address', max: ADDRESS_MAX, placeholder: 'Quartier, rue, ville' },
 ]
 
 export function ExpressCheckout() {
-  const [v, setV] = useState({ name: '', phone: '', city: '', address: '' })
+  const [v, setV] = useState({ name: '', phone: '', address: '' })
   const [qty, setQty] = useState(1)
   const [errors, setErrors] = useState<Errors>({})
   const [status, setStatus] = useState<'idle' | 'sending' | 'done'>('idle')
@@ -46,8 +46,7 @@ export function ExpressCheckout() {
     const next: Errors = {}
     if (clean(v.name).length < 3) next.name = 'Veuillez saisir votre nom complet.'
     if (!isValidPhone(v.phone)) next.phone = 'Numéro marocain valide, ex. 06 12 34 56 78.'
-    if (clean(v.city).length < CITY_MIN) next.city = 'Veuillez saisir votre ville.'
-    if (clean(v.address).length < ADDRESS_MIN) next.address = 'Veuillez saisir votre adresse (quartier, rue, numéro).'
+    if (clean(v.address).length < ADDRESS_MIN) next.address = 'Veuillez saisir votre adresse (quartier, rue, ville).'
     setErrors(next)
     const first = (Object.keys(next) as (keyof Errors)[])[0]
     if (first) {
@@ -61,7 +60,6 @@ export function ExpressCheckout() {
       clientId: newClientId(),
       name,
       phone: normalizePhone(v.phone),
-      city: clean(v.city),
       address: clean(v.address),
       product: PRODUCT.name,
       quantity: qty,
@@ -115,7 +113,7 @@ export function ExpressCheckout() {
 
                 <div className="mt-16 grid gap-12 md:grid-cols-2">
                   {FIELDS.map((f) => (
-                    <div key={f.id}>
+                    <div key={f.id} className={f.id === 'address' ? 'md:col-span-2' : ''}>
                       <label htmlFor={`x-${f.id}`} className="block fs-13 font-semibold text-[#4a0108]">
                         {f.label} <span aria-hidden>*</span>
                       </label>
@@ -126,6 +124,7 @@ export function ExpressCheckout() {
                         inputMode={f.inputMode}
                         autoComplete={f.autoComplete}
                         maxLength={f.max}
+                        placeholder={f.placeholder}
                         required
                         value={v[f.id]}
                         onChange={(e) => setV({ ...v, [f.id]: e.target.value })}

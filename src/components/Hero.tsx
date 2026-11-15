@@ -1,12 +1,21 @@
-import { ArrowRight, Leaf, Shield, ShoppingCart, Sparkle } from 'lucide-react'
-import { Link } from 'react-router-dom'
-import { ORDER_PATH } from '../content'
+import { ArrowRight, Clock, Leaf, ShoppingCart, Sparkle } from 'lucide-react'
 
 const PERKS = [
-  { Icon: Sparkle, l1: 'Éclaircit', l2: 'les aisselles' },
-  { Icon: Shield, l1: 'Protection', l2: '24h' },
-  { Icon: Leaf, l1: 'Douce', l2: 'pour la peau' },
+  { Icon: Sparkle, l1: 'Unifie', l2: 'progressivement' },
+  { Icon: Clock, l1: 'Fraîcheur', l2: 'toute la journée' },
+  { Icon: Leaf, l1: 'Formule', l2: 'douce' },
 ]
+
+/** Hero button → the express form right below (smooth unless reduced motion), cursor in the first field. */
+function goToOrderForm(e: React.MouseEvent<HTMLAnchorElement>) {
+  const form = document.getElementById('commander')
+  if (!form) return // no form on this page: follow the link
+  e.preventDefault()
+  const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches
+  form.scrollIntoView({ behavior: reduce ? 'auto' : 'smooth', block: 'start' })
+  window.setTimeout(() => document.getElementById('x-name')?.focus({ preventScroll: true }), reduce ? 0 : 600)
+  history.replaceState(null, '', '#commander')
+}
 
 export function Hero() {
   return (
@@ -93,15 +102,16 @@ export function Hero() {
             confort et confiance, du matin au soir.
           </p>
 
-          <Link
-            to={ORDER_PATH}
+          <a
+            href="#commander"
+            onClick={goToOrderForm}
             data-anim="hero-cta"
             className="group mt-22 flex h-50 w-full max-w-320 items-center justify-center gap-12 rounded-pill bg-ivory-2 fs-16.5 font-semibold text-ink shadow-[0_6px_24px_rgba(0,0,0,0.18)] transition-[scale] duration-300 hover:scale-[1.02] md:w-295 lg:mt-20 lg:ml-3 lg:h-48"
           >
             <ShoppingCart className="size-22" strokeWidth={1.6} aria-hidden />
             Acheter maintenant
             <ArrowRight className="size-17 transition-transform group-hover:translate-x-3" strokeWidth={2} aria-hidden />
-          </Link>
+          </a>
 
           <ul className="mt-22 flex w-full max-w-340 items-start lg:mt-19 lg:-ml-2 lg:w-349" aria-label="Points clés">
             {PERKS.map(({ Icon, l1, l2 }, i) => (

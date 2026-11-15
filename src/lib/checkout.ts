@@ -19,7 +19,5 @@ export const normalizePhone = (v: string) => v.replace(/[\s.-]/g, '').replace(/^
 export const isValidPhone = (v: string) => /^0[5-7]\d{8}$/.test(normalizePhone(v))
 
 /** Same limits as the bot (/orders validates them again server-side). */
-export const CITY_MIN = 2
-export const CITY_MAX = 60
 export const ADDRESS_MIN = 5
 export const ADDRESS_MAX = 200

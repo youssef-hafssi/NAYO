@@ -8,6 +8,7 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
+from .cities import detect_city
 from .phone import is_moroccan_mobile_or_landline, normalize_phone
 from .pricing import MAX_QTY, PRODUCT_NAME, order_total
 from .sheets import OrdersRepo, now_local
@@ -101,7 +102,10 @@ def create_order(body: OrderIn, orders: OrdersRepo, store: Store) -> OrderOut:
     if not written:
         row = order_row(number, body.name, body.phone, body.quantity, "new",
                         "" if not body.orderNumber else "numéro de secours (site)", source="website")
-        row.update(city=body.city or "", address=body.address or "")
+        # Express checkout sends the address only: the city column is filled from it when it names a known
+        # Moroccan city (reports, delivery), otherwise left empty — the client is never asked for it.
+        city = body.city or (detect_city(body.address) if body.address else "")
+        row.update(city=city, address=body.address or "")
         orders.append(row)
         store.mark_written(body.clientId)
         log.info("order %s created (qty %d, %d MAD)", number, body.quantity, total)
