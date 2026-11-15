@@ -33,7 +33,6 @@ export default function Landing() {
         .from(q('[data-anim="hero-underline"] path'), { strokeDasharray: 240, strokeDashoffset: 240, duration: 0.9, ease: 'power2.inOut' }, 0.95)
         .from(q('[data-anim="hero-copy"]'), { y: 14, autoAlpha: 0, duration: 0.8 }, 0.8)
         .from(q('[data-anim="hero-cta"]'), { y: 14, autoAlpha: 0, duration: 0.8, clearProps: 'transform' }, 0.92)
-        .from(q('[data-anim="hero-perk"]'), { y: 12, autoAlpha: 0, duration: 0.6, stagger: 0.08 }, 1.05)
         .set(q('[data-anim="hero-underline"] path'), { clearProps: 'strokeDasharray,strokeDashoffset' })
 
       // Depth: backdrop and model drift by different amounts with the pointer → subtle 3D parallax.

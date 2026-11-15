@@ -1,11 +1,6 @@
-import { ArrowRight, Clock, Leaf, ShoppingCart, Sparkle } from 'lucide-react'
+import { ArrowRight, ShoppingCart } from 'lucide-react'
 import { goToOrderForm } from '../lib/scroll'
 
-const PERKS = [
-  { Icon: Sparkle, l1: 'Unifie', l2: 'progressivement' },
-  { Icon: Clock, l1: 'Fraîcheur', l2: 'toute la journée' },
-  { Icon: Leaf, l1: 'Formule', l2: 'douce' },
-]
 
 export function Hero() {
   return (
@@ -104,24 +99,6 @@ export function Hero() {
             <ArrowRight className="size-17 transition-transform group-hover:translate-x-3" strokeWidth={2} aria-hidden />
           </a>
 
-          <ul className="mt-22 flex w-full max-w-340 items-start lg:mt-19 lg:-ml-2 lg:w-349" aria-label="Points clés">
-            {PERKS.map(({ Icon, l1, l2 }, i) => (
-              <li
-                key={l1}
-                data-anim="hero-perk"
-                className={`flex flex-1 flex-col items-center text-center ${
-                  i > 0 ? 'border-l border-white/35' : ''
-                }`}
-              >
-                <Icon className="size-30" strokeWidth={1.15} aria-hidden />
-                <span className="mt-10 px-2 fs-12.5 lh-16 text-white/95 sm:fs-14 sm:lh-17 lg:mt-6">
-                  {l1}
-                  <br />
-                  {l2}
-                </span>
-              </li>
-            ))}
-          </ul>
         </div>
       </div>
     </section>
