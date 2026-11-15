@@ -90,27 +90,8 @@ function ReviewCard({ r }: { r: Review }) {
       className="rounded-16 border border-[#efdfd5] bg-[#fdf4ec] px-20 pt-14 pb-14 shadow-[0_2px_8px_rgba(80,20,20,0.04)]"
     >
       <figure className="flex h-full flex-col">
-        <div className="flex items-start gap-12">
-          <div className="min-w-0 flex-1">
-            <div className="flex gap-3" role="img" aria-label={`${rating} étoile${rating > 1 ? 's' : ''} sur 5`}>
-              {Array.from({ length: 5 }).map((_, i) => (
-                <Star
-                  key={i}
-                  className={`size-16 ${i < rating ? 'fill-current text-star' : 'text-[#d9c6bb]'}`}
-                  strokeWidth={i < rating ? 0 : 1.5}
-                  aria-hidden
-                />
-              ))}
-            </div>
-            <blockquote
-              lang={r.lang === 'darija' ? 'ary' : r.lang}
-              dir={r.lang === 'ar' ? 'rtl' : 'ltr'}
-              className="mt-8 font-serif fs-16.5 lh-22 tracking-[-0.02em] text-[#2a0a0c] [font-variation-settings:'opsz'_24]"
-            >
-              {/* « » mirror correctly in right-to-left text; curly quotes don't */}
-              <p>{r.lang === 'ar' ? `«${r.text}»` : `“${r.text}”`}</p>
-            </blockquote>
-          </div>
+        <div className="flow-root">
+          {/* Photo floats beside the stars; the text runs under it at full width (no narrow column). */}
           {r.photo && (
             <img
               src={r.photo}
@@ -118,9 +99,27 @@ function ReviewCard({ r }: { r: Review }) {
               loading="lazy"
               width={128}
               height={128}
-              className="size-64 shrink-0 rounded-12 object-cover"
+              className="float-right mb-6 ml-12 size-64 rounded-12 object-cover"
             />
           )}
+          <div className="flex gap-3" role="img" aria-label={`${rating} étoile${rating > 1 ? 's' : ''} sur 5`}>
+            {Array.from({ length: 5 }).map((_, i) => (
+              <Star
+                key={i}
+                className={`size-16 ${i < rating ? 'fill-current text-star' : 'text-[#d9c6bb]'}`}
+                strokeWidth={i < rating ? 0 : 1.5}
+                aria-hidden
+              />
+            ))}
+          </div>
+          <blockquote
+            lang={r.lang === 'darija' ? 'ary' : r.lang}
+            dir={r.lang === 'ar' ? 'rtl' : 'ltr'}
+            className="mt-8 font-serif fs-16 lh-22 tracking-[-0.02em] text-[#2a0a0c] [font-variation-settings:'opsz'_24]"
+          >
+            {/* « » mirror correctly in right-to-left text; curly quotes don't */}
+            <p>{r.lang === 'ar' ? `«${r.text}»` : `“${r.text}”`}</p>
+          </blockquote>
         </div>
         <figcaption className="mt-auto flex flex-wrap items-center gap-x-10 gap-y-4 pt-12">
           <span className="fs-14.5 font-semibold text-ink">{[r.author, r.city].filter(Boolean).join(', ')}</span>

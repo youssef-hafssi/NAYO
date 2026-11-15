@@ -25,7 +25,32 @@ export type Review = {
   photoAlt?: string // e.g. "Photo envoyée par Salma (visage flouté)"
 }
 export const SHOW_REVIEWS = true
-export const REVIEWS: Review[] = []
+// Real reviews from delivered customers, sent by the owner on 2026-11-15, copied word for word. City not given yet.
+export const REVIEWS: Review[] = [
+  {
+    text: 'بصراحة عجبني بزاف! كنت كنقلب على شي حاجة نهتم بيها ببشرتي، وNAYO ولى جزء من الروتين ديالي. التكسطور ديالو زوينة وكيخلي البشرة ناعمة. ❤️',
+    author: 'Salma B.',
+    city: '',
+    lang: 'ar', // Darija in Arabic script: right to left
+    rating: 5,
+  },
+  {
+    text: 'منتوج زوين وساهل فالاستعمال، وعجبني حتى الشكل ديالو والتغليف. كنستعملو بانتظام ومرتاحـة معاه. التوصيل حتى هو كان مزيان!',
+    author: 'Imane E.',
+    city: '',
+    lang: 'ar', // Darija in Arabic script: right to left
+    rating: 5,
+  },
+  {
+    text: "J'utilise NAYO depuis quelque temps et j'aime beaucoup sa texture et sa facilité d'utilisation. Je l'ai intégré à ma routine quotidienne et j'apprécie particulièrement le confort qu'il laisse sur ma peau. Un joli produit que je recommande pour prendre soin de soi.",
+    author: 'Sarah M.',
+    city: '',
+    lang: 'fr',
+    rating: 5,
+    photo: '/assets/reviews/sarah-m-320.webp',
+    photoAlt: 'Photo envoyée par Sarah M. (visage flouté)',
+  },
+]
 
 export const BRAND_POINTS = [
   {

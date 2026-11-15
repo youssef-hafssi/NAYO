@@ -31,6 +31,7 @@ export function Editorial() {
               </div>
             ))}
           </div>
+          <figcaption className="mt-6 text-center fs-11.5 lh-16 text-[#8a7a7c]">Visuels illustratifs</figcaption>
         </figure>
 
         {/* Copy */}

@@ -7,7 +7,7 @@ Pixel-accurate recreation of two approved designs (landing + checkout) for the N
 - Owner-approved landing changes (override the screenshots for these parts only): trust strip right below the hero
   (Livraison rapide · Paiement à la livraison · Confirmation sur WhatsApp); express checkout `#commander` (name, phone,
   ONE address field "Quartier, rue, ville", qty → same POST /orders + success screen as /commande; the hero button
-  scrolls to it); the editorial photo is the Semaine 1 / Semaine 4 pair (no caption, owner's choice; old
+  scrolls to it); the editorial photo is the Semaine 1 / Semaine 4 pair with a discreet "Visuels illustratifs" caption (old
   avant/après images removed); "Avis" section with the face-blurred `nayo-selfie-*.webp`. Its cards show ONLY real
   reviews from `REVIEWS` in content.ts (copied word for word from admin → Clients → "Avis"; never write one); while
   it is empty they show the 3 brand statements (no quotes, names or stars). Benefits / hero perks: "Unifie
