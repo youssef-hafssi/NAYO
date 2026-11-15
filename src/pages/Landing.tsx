@@ -84,12 +84,12 @@ export default function Landing() {
       <Header />
       <main>
         <Hero />
-        <TrustStrip />
         <ExpressCheckout />
-        <Benefits />
-        <Editorial />
+        <TrustStrip />
         {/* real reviews only (content.ts → REVIEWS); brand statements while there are none */}
         <Reviews />
+        <Benefits />
+        <Editorial />
         <Faq />
       </main>
       <Footer />

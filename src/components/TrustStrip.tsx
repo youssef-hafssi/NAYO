@@ -11,7 +11,7 @@ const ITEMS = [
 
 export function TrustStrip() {
   return (
-    <section aria-label="Garanties" className="border-b border-line bg-ivory">
+    <section aria-label="Garanties" className="border-y border-line bg-ivory">
       <ul className="mx-auto grid w-full max-w-1024 grid-cols-3 px-8 py-14 md:px-24 md:py-18">
         {ITEMS.map((it, i) => (
           <li

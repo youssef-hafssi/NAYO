@@ -19,7 +19,7 @@ export function Reviews({ reviews = REVIEWS }: { reviews?: readonly Review[] }) 
   const withPhotos = shown.some((r) => r.photo)
 
   return (
-    <section id="avis" aria-labelledby="avis-title" className="scroll-mt-80 bg-ivory pb-28 md:pb-36">
+    <section id="avis" aria-labelledby="avis-title" className="scroll-mt-80 bg-ivory pt-16 pb-28 md:pt-24 md:pb-36">
       <div className="mx-auto w-full max-w-1024 px-16 md:px-24 lg:px-0">
         <div className="flex items-center justify-center gap-24 pt-8 lg:gap-0 lg:pt-16">
           <span className="hidden h-px flex-1 bg-gradient-to-r from-transparent to-[#c7b0a5] md:block md:max-w-182 lg:ml-206" aria-hidden />

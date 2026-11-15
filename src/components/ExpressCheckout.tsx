@@ -107,9 +107,14 @@ export function ExpressCheckout() {
             ) : (
               <form noValidate onSubmit={submit} onFocus={wake}>
                 <h2 id="express-title" className="serif-tight fs-28 lh-32 text-[#4a0108] md:fs-32 md:lh-38">
-                  Commandez en 1&nbsp;minute
+                  Réservez votre NAYO en 1&nbsp;minute
                 </h2>
-                <p className="mt-6 fs-14.5 lh-20 text-[#5a4446]">Paiement à la livraison · livraison partout au Maroc.</p>
+                <p className="mt-6 fs-14.5 lh-20 text-[#5a4446]">
+                  Paiement à la livraison • Confirmation rapide sur WhatsApp • Livraison partout au Maroc
+                </p>
+                <p className="mt-12 r-10 bg-[#f6e2e1] px-12 py-8 fs-14 lh-19 font-bold text-[#4a0108]">
+                  Stock de lancement limité : les commandes du jour sont traitées en priorité
+                </p>
 
                 <div className="mt-16 grid gap-12 md:grid-cols-2">
                   {FIELDS.map((f) => (
@@ -199,7 +204,7 @@ export function ExpressCheckout() {
                   )}
                 </button>
                 <p className="mt-10 text-center fs-12.5 lh-17 text-[#6b5557]">
-                  En commandant, vous acceptez d'être contacté(e) sur WhatsApp pour confirmer votre commande.
+                  Après votre commande, confirmez rapidement sur WhatsApp en un clic.
                 </p>
               </form>
             )}
