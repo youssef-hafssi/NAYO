@@ -10,14 +10,19 @@ export const ORDER_PATH = '/commande'
 
 /*
  * Avis — ONLY real reviews, copied word for word from what clients sent (admin → Clients → tag "Avis"), with their
- * agreement. Never write or edit a review. Starts empty; while it is empty the section shows BRAND_POINTS instead
- * (the brand speaking: no quote marks, no names, no stars).
+ * agreement. Never write or edit a review, never invent a rating. While the list is empty the section shows
+ * BRAND_POINTS instead (the brand speaking: no quote marks, no names, no stars). The first 3 entries are shown.
  */
 export type Review = {
   text: string // the client's words, unchanged
   author: string // first name or initial, e.g. "Salma" or "S."
   city: string // e.g. "Agadir" (may be "")
   lang: 'fr' | 'darija' | 'ar' | 'en' // 'ar' is shown right-to-left
+  rating: 1 | 2 | 3 | 4 | 5 // the stars SHE gave (ask her "Combien d'étoiles sur 5 ?"): never a default
+  /** Optional photo she sent, FACE ALREADY BLURRED, saved in public/assets/reviews/ (e.g. '/assets/reviews/salma.webp').
+   *  Once one review has a photo, the big standalone selfie next to the cards is no longer shown. */
+  photo?: string
+  photoAlt?: string // e.g. "Photo envoyée par Salma (visage flouté)"
 }
 export const SHOW_REVIEWS = true
 export const REVIEWS: Review[] = []

@@ -31,9 +31,6 @@ export function Editorial() {
               </div>
             ))}
           </div>
-          <figcaption className="mt-8 text-center fs-13 lh-18 text-[#5a4446]">
-            Images à titre illustratif. Résultats variables selon les personnes.
-          </figcaption>
         </figure>
 
         {/* Copy */}
