@@ -52,7 +52,7 @@ export function Faq() {
     >
       <div className="mx-auto w-full max-w-1024 px-16 pt-36 pb-56 md:px-24 lg:px-0 lg:pt-28 lg:pb-64 lg:pl-56 lg:pr-54">
         <h2 id="faq-title" data-anim="reveal" className="serif-tight fs-28 lh-38 text-[#f7f1ec] lg:fs-30 lg:lh-38 lg:tracking-[-0.05em]">
-          Questions fréquentes
+          Pour répondre à vos questions
         </h2>
         <ul className="mt-20 flex flex-col gap-11 lg:mt-19">
           {FAQ.map((f, i) => (

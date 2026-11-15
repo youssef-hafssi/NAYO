@@ -66,15 +66,19 @@ export const BRAND_POINTS = [
   { title: 'Fraîcheur toute la journée', text: 'Une sensation de fraîcheur du matin au soir.' },
 ] as const
 
-// DRAFT ANSWERS — to be confirmed by the brand before launch (claims about results and formula).
+// FAQ answers supplied by the owner (2026-11-15). Claims about results / the formula: only what the owner confirms.
 export const FAQ = [
   {
-    q: "Combien de temps dure l'éclaircissement ?",
-    a: "Les premiers résultats apparaissent généralement après quelques semaines d'utilisation quotidienne. Appliquez NAYO matin et soir sur une peau propre et sèche pour un résultat progressif et durable.",
+    q: 'Est-ce que NAYO convient aux peaux sensibles ?',
+    a: 'Sa formule est pensée pour être douce au quotidien. La tolérance sur les peaux sensibles reste à confirmer par les tests.',
   },
   {
-    q: 'Convient-il aux peaux sensibles ?',
-    a: "Oui. Sa formule douce et non irritante a été pensée pour un usage quotidien, y compris sur les peaux sensibles. Évitez de l'appliquer juste après l'épilation ou sur une peau lésée.",
+    q: 'En combien de temps les résultats sont-ils visibles ?',
+    a: "Les premiers résultats peuvent être visibles à partir de 30 jours d'utilisation régulière. Les résultats varient selon la peau.",
+  },
+  {
+    q: "Quelle est l'odeur de NAYO ?",
+    a: 'Velvet Rose 🌹 Une senteur florale douce et élégante, pensée pour accompagner votre quotidien.',
   },
   {
     q: "Quels sont les ingrédients ?",

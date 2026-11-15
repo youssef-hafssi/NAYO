@@ -4,7 +4,7 @@ import { Logo } from './Logo'
 import { ORDER_PATH } from '../content'
 
 const NAV = [
-  { href: '#benefices', label: 'Bénéfices' },
+  { href: '#resultats', label: 'Résultats' },
   { href: '#avis', label: 'Avis' },
   { href: '#faq', label: 'FAQ' },
 ]

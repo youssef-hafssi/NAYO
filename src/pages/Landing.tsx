@@ -3,8 +3,9 @@ import gsap from 'gsap'
 import { ScrollTrigger } from 'gsap/ScrollTrigger'
 import { Header } from '../components/Header'
 import { Hero } from '../components/Hero'
-import { Benefits } from '../components/Benefits'
-import { Editorial } from '../components/Editorial'
+import { Results } from '../components/Results'
+import { WhyEffective } from '../components/WhyEffective'
+import { Lifestyle } from '../components/Lifestyle'
 import { TrustStrip } from '../components/TrustStrip'
 import { Reviews } from '../components/Reviews'
 import { ExpressCheckout } from '../components/ExpressCheckout'
@@ -88,9 +89,10 @@ export default function Landing() {
         <TrustStrip />
         {/* real reviews only (content.ts → REVIEWS); brand statements while there are none */}
         <Reviews />
-        <Benefits />
-        <Editorial />
+        <Results />
+        <WhyEffective />
         <Faq />
+        <Lifestyle />
       </main>
       <Footer />
     </div>

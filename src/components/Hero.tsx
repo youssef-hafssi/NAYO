@@ -1,21 +1,11 @@
 import { ArrowRight, Clock, Leaf, ShoppingCart, Sparkle } from 'lucide-react'
+import { goToOrderForm } from '../lib/scroll'
 
 const PERKS = [
   { Icon: Sparkle, l1: 'Unifie', l2: 'progressivement' },
   { Icon: Clock, l1: 'Fraîcheur', l2: 'toute la journée' },
   { Icon: Leaf, l1: 'Formule', l2: 'douce' },
 ]
-
-/** Hero button → the express form right below (smooth unless reduced motion), cursor in the first field. */
-function goToOrderForm(e: React.MouseEvent<HTMLAnchorElement>) {
-  const form = document.getElementById('commander')
-  if (!form) return // no form on this page: follow the link
-  e.preventDefault()
-  const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches
-  form.scrollIntoView({ behavior: reduce ? 'auto' : 'smooth', block: 'start' })
-  window.setTimeout(() => document.getElementById('x-name')?.focus({ preventScroll: true }), reduce ? 0 : 600)
-  history.replaceState(null, '', '#commander')
-}
 
 export function Hero() {
   return (
