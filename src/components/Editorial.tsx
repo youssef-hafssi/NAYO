@@ -42,10 +42,9 @@ export function Editorial() {
             éclaircissant du quotidien.
           </h2>
           <p data-anim="reveal" className="mt-16 max-w-400 fs-16 lh-23 text-[#2e1a1c] lg:mt-14 lg:max-w-none lg:whitespace-nowrap lg:fs-17 lg:lh-22 lg:font-[500]">
-            NAYO aide à éclaircir et à unifier le teint <br className="hidden lg:block" />
-            de vos aisselles grâce à son Super Fruit <br className="hidden lg:block" />
-            Enzyme Triple Blend et à l'acide citrique, <br className="hidden lg:block" />
-            qui exfolient la peau en douceur.
+            Un déodorant éclaircissant qui unifie le teint <br className="hidden lg:block" />
+            de vos aisselles, tout en vous offrant fraîcheur, <br className="hidden lg:block" />
+            confort et confiance, du matin au soir.
           </p>
           <Link
             to={ORDER_PATH}

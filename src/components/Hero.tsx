@@ -97,9 +97,10 @@ export function Hero() {
             data-anim="hero-copy"
             className="mt-14 max-w-360 fs-16 lh-23 text-[#f3e8e2] lg:mt-4 lg:ml-4 lg:max-w-none lg:whitespace-nowrap lg:fs-17 lg:lh-22.5 lg:tracking-[-0.005em] font-[500]"
           >
-            Un déodorant éclaircissant qui unifie le teint <br className="hidden lg:block" />
-            de vos aisselles, tout en vous offrant fraîcheur, <br className="hidden lg:block" />
-            confort et confiance, du matin au soir.
+            NAYO aide à éclaircir et à unifier le teint <br className="hidden lg:block" />
+            de vos aisselles grâce à son Super Fruit <br className="hidden lg:block" />
+            Enzyme Triple Blend et à l'acide citrique, <br className="hidden lg:block" />
+            qui exfolient la peau en douceur.
           </p>
 
           <a
@@ -123,7 +124,7 @@ export function Hero() {
                 }`}
               >
                 <Icon className="size-30" strokeWidth={1.15} aria-hidden />
-                <span className="mt-10 fs-14 lh-17 text-white/95 lg:mt-6">
+                <span className="mt-10 px-2 fs-12.5 lh-16 text-white/95 sm:fs-14 sm:lh-17 lg:mt-6">
                   {l1}
                   <br />
                   {l2}
