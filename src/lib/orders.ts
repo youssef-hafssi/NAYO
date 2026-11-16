@@ -30,6 +30,10 @@ export type OrderPayload = {
   // Express checkout (landing page): the bot then only sends the recap and asks "oui".
   city?: string
   address?: string
+  // Meta Pixel cookies + page URL, forwarded by the bot to the Conversions API (optional; dropped if malformed)
+  fbp?: string
+  fbc?: string
+  pageUrl?: string
 }
 
 export type SubmitResult = { orderNumber: string; total: number; fallback: boolean }
@@ -52,7 +56,19 @@ function fallbackNumber(): string {
   return `NAYO-W${String(n[0] % 1_000_000).padStart(6, '0')}`
 }
 
-async function post(order: OrderPayload, timeoutMs: number): Promise<{ ok: true; orderNumber: string; total: number } | { ok: false; permanent: boolean }> {
+type PostResult = { ok: true; orderNumber: string; total: number } | { ok: false; permanent: boolean }
+
+/** A bot that predates the Meta fields rejects unknown fields (422): never lose the order for them — resend without. */
+async function post(order: OrderPayload, timeoutMs: number): Promise<PostResult> {
+  const r = await postOnce(order, timeoutMs)
+  if (!r.ok && r.permanent && (order.fbp || order.fbc || order.pageUrl)) {
+    const { fbp: _fbp, fbc: _fbc, pageUrl: _pageUrl, ...plain } = order
+    return postOnce(plain, timeoutMs)
+  }
+  return r
+}
+
+async function postOnce(order: OrderPayload, timeoutMs: number): Promise<PostResult> {
   const ctrl = new AbortController()
   const timer = setTimeout(() => ctrl.abort(), timeoutMs)
   try {
@@ -67,7 +83,7 @@ async function post(order: OrderPayload, timeoutMs: number): Promise<{ ok: true;
       const data = (await res.json()) as { orderNumber: string; total: number }
       return { ok: true, orderNumber: data.orderNumber, total: data.total }
     }
-    // Only an invalid order (422/413) is permanent. A bad API key (401), a CORS/config problem or a
+    // Only an invalid order (422/413) is permanent (post() first retries a 422 without the Meta fields). A bad API key (401), a CORS/config problem or a
     // sleeping server can be fixed later, so the order stays saved and is retried.
     if (res.status === 401) console.error('[NAYO] the bot rejected VITE_ORDER_API_KEY — check it matches ORDER_API_KEY')
     return { ok: false, permanent: res.status === 422 || res.status === 413 }

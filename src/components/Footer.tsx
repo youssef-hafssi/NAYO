@@ -8,6 +8,7 @@ export function Footer() {
         <p className="fs-12.5">Livraison partout au Maroc · Paiement à la livraison</p>
         <p className="fs-12.5">© {new Date().getFullYear()} NAYO</p>
       </div>
+      <p className="mx-auto max-w-1024 px-16 pb-16 text-center fs-11 text-white/45 md:px-24">Ce site mesure son audience pour améliorer le service.</p>
     </footer>
   )
 }

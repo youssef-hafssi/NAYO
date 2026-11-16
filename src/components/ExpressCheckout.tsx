@@ -3,6 +3,7 @@ import { ArrowRight, CircleCheck, Loader2, Minus, Plus } from 'lucide-react'
 import { PRODUCT } from '../content'
 import { ADDRESS_MAX, ADDRESS_MIN, fmt, isValidPhone, MAX_QTY, normalizePhone, WHATSAPP_NUMBER, whatsappUrl } from '../lib/checkout'
 import { keepFlushing, newClientId, submitOrder, wakeBot } from '../lib/orders'
+import { metaOrderFields, PRODUCT_EVENT, track, trackOnce } from '../lib/pixel'
 import { WhatsAppGlyph } from './WhatsAppGlyph'
 
 /*
@@ -32,6 +33,7 @@ export function ExpressCheckout() {
 
   // Free hosts sleep: wake the bot when the visitor starts filling the form, not on every page view.
   const wake = () => {
+    trackOnce('InitiateCheckout', { ...PRODUCT_EVENT, value: total, num_items: qty })
     if (!woke.current) {
       woke.current = true
       wakeBot()
@@ -56,8 +58,10 @@ export function ExpressCheckout() {
     setStatus('sending')
     const name = clean(v.name)
     // Waits up to 10 s for the bot's number; otherwise a saved NAYO-W… fallback (retried in the background).
+    const clientId = newClientId()
     const result = await submitOrder({
-      clientId: newClientId(),
+      ...metaOrderFields(),
+      clientId,
       name,
       phone: normalizePhone(v.phone),
       address: clean(v.address),
@@ -72,6 +76,9 @@ export function ExpressCheckout() {
       status: 'new',
       createdAt: new Date().toISOString(),
     })
+    // Cash on delivery: placing the order is a Lead (Purchase comes from the bot once the order is confirmed).
+    // Same event_id as the bot's Conversions API Lead (the order number): Meta counts it once.
+    track('Lead', { ...PRODUCT_EVENT, value: result.total, num_items: qty, contents: [{ id: 'nayo-deodorant', quantity: qty }] }, result.orderNumber)
     setPlaced({ orderNumber: result.orderNumber, total: result.total, name })
     setStatus('done')
   }

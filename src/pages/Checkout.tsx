@@ -5,6 +5,7 @@ import { ArrowRight, CircleCheck, Package, Phone, Truck, User, Check, Minus, Plu
 import { Logo } from '../components/Logo'
 import { PRODUCT } from '../content'
 import { keepFlushing, newClientId, submitOrder, wakeBot } from '../lib/orders'
+import { metaOrderFields, pageView, PRODUCT_EVENT, track, trackOnce } from '../lib/pixel'
 import { fmt, isValidPhone, MAX_QTY, normalizePhone, WHATSAPP_NUMBER, whatsappUrl } from '../lib/checkout'
 import { WhatsAppGlyph } from '../components/WhatsAppGlyph'
 
@@ -88,6 +89,7 @@ export default function Checkout() {
 
   // Free hosts sleep: wake the bot as soon as the checkout opens, so the order POST is fast.
   useEffect(() => wakeBot(), [])
+  useEffect(() => pageView(), [])
   // Fallback orders saved locally are re-sent until the bot has them.
   useEffect(() => (status === 'done' ? keepFlushing() : undefined), [status])
 
@@ -107,8 +109,10 @@ export default function Checkout() {
     setStatus('sending')
     const cleanName = name.trim().replace(/\s+/g, ' ')
     // Waits up to 10 s for the bot's number; otherwise a saved NAYO-W… fallback (retried in the background).
+    const clientId = newClientId()
     const result = await submitOrder({
-      clientId: newClientId(),
+      ...metaOrderFields(),
+      clientId,
       name: cleanName,
       phone: normalizePhone(phone),
       product: PRODUCT.name,
@@ -123,6 +127,9 @@ export default function Checkout() {
       createdAt: new Date().toISOString(),
     })
     if (!WHATSAPP_NUMBER) console.error('[NAYO] VITE_WHATSAPP_NUMBER is not set — the WhatsApp button is hidden.')
+    // Cash on delivery: placing the order is a Lead (Purchase comes from the bot once the order is confirmed).
+    // Same event_id as the bot's Conversions API Lead (the order number): Meta counts it once.
+    track('Lead', { ...PRODUCT_EVENT, value: result.total, num_items: qty, contents: [{ id: 'nayo-deodorant', quantity: qty }] }, result.orderNumber)
     setPlaced({ orderNumber: result.orderNumber, total: result.total, name: cleanName })
     setStatus('done')
   }
@@ -170,7 +177,13 @@ export default function Checkout() {
               </p>
             </div>
 
-            <form noValidate onSubmit={submit} className="order-3 lg:mt-52" aria-describedby="cod-note">
+            <form
+              noValidate
+              onSubmit={submit}
+              onFocus={() => trackOnce('InitiateCheckout', { ...PRODUCT_EVENT, value: total, num_items: qty })}
+              className="order-3 lg:mt-52"
+              aria-describedby="cod-note"
+            >
               {status === 'done' && placed ? (
                 <div role="status" className="r-16 border border-[#d9d0d1] bg-[#fcf4f4] px-20 py-24 text-center lg:px-40 lg:py-40">
                   <CircleCheck className="mx-auto size-40 text-[#5c0715] lg:size-56" strokeWidth={1.4} aria-hidden />
