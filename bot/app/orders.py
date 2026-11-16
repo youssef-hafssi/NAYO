@@ -19,6 +19,11 @@ log = logging.getLogger("nayo.orders")
 _CONTROL = re.compile(r"[\x00-\x1f\x7f]")
 MIN_CITY, MAX_CITY = 2, 60
 MIN_ADDRESS, MAX_ADDRESS = 5, 200
+_TRACKING = {
+    "fbp": re.compile(r"fb\.\d\.\d{10,16}\.\d{1,32}"),
+    "fbc": re.compile(r"fb\.\d\.\d{10,16}\.[A-Za-z0-9_\-.]{1,500}"),
+    "pageUrl": re.compile(r"https?://[^\s]{1,990}"),
+}
 
 
 class OrderIn(BaseModel):
@@ -43,6 +48,18 @@ class OrderIn(BaseModel):
     # Express checkout on the landing page: city + address known -> the bot only sends the recap and asks "oui".
     city: str | None = Field(default=None, max_length=MAX_CITY)
     address: str | None = Field(default=None, max_length=MAX_ADDRESS)
+    # Meta Pixel: browser cookies + page URL, forwarded to the Conversions API (never stored on the order).
+    fbp: str | None = None
+    fbc: str | None = None
+    pageUrl: str | None = None
+
+    @field_validator("fbp", "fbc", "pageUrl", mode="before")
+    @classmethod
+    def _tracking(cls, v: Any, info: Any) -> str | None:
+        """Tracking must never block an order: anything malformed, too long or not text is dropped (None), never a 422."""
+        if not isinstance(v, str) or not v or len(v) > 1000:
+            return None
+        return v if _TRACKING[info.field_name].fullmatch(v) else None
 
     @field_validator("city", "address")
     @classmethod
@@ -80,7 +97,8 @@ class OrderOut(BaseModel):
     total: int
 
 
-def create_order(body: OrderIn, orders: OrdersRepo, store: Store) -> OrderOut:
+def create_order(body: OrderIn, orders: OrdersRepo, store: Store, on_created: Any = None) -> OrderOut:
+    """`on_created(row)` is called once, only when the order row is really written now (not on a retry)."""
     total = order_total(body.quantity)
     if body.total is not None and body.total != total:
         log.warning("client total %s differs from computed %s — using computed", body.total, total)
@@ -108,6 +126,8 @@ def create_order(body: OrderIn, orders: OrdersRepo, store: Store) -> OrderOut:
         row.update(city=city, address=body.address or "")
         orders.append(row)
         store.mark_written(body.clientId)
+        if on_created is not None:
+            on_created(row)
         log.info("order %s created (qty %d, %d MAD)", number, body.quantity, total)
     return OrderOut(orderNumber=number, quantity=body.quantity, total=total)
 

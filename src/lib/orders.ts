@@ -30,6 +30,10 @@ export type OrderPayload = {
   // Express checkout (landing page): the bot then only sends the recap and asks "oui".
   city?: string
   address?: string
+  // Meta Pixel cookies + page URL, forwarded by the bot to the Conversions API (optional; dropped if malformed)
+  fbp?: string
+  fbc?: string
+  pageUrl?: string
 }
 
 export type SubmitResult = { orderNumber: string; total: number; fallback: boolean }

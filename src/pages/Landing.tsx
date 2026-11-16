@@ -1,4 +1,4 @@
-import { useLayoutEffect, useRef } from 'react'
+import { useEffect, useLayoutEffect, useRef } from 'react'
 import gsap from 'gsap'
 import { ScrollTrigger } from 'gsap/ScrollTrigger'
 import { Header } from '../components/Header'
@@ -11,11 +11,19 @@ import { ExpressCheckout } from '../components/ExpressCheckout'
 
 import { Faq } from '../components/Faq'
 import { Footer } from '../components/Footer'
+import { pageView, PRODUCT_EVENT, track } from '../lib/pixel'
+import { PRODUCT } from '../content'
 
 gsap.registerPlugin(ScrollTrigger)
 
 export default function Landing() {
   const root = useRef<HTMLDivElement>(null)
+
+  // Meta Pixel: page view + the product seen (no-op when VITE_META_PIXEL_ID isn't set).
+  useEffect(() => {
+    pageView()
+    track('ViewContent', { ...PRODUCT_EVENT, value: PRODUCT.price, content_name: PRODUCT.name })
+  }, [])
 
   useLayoutEffect(() => {
     const mm = gsap.matchMedia()

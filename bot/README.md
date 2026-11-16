@@ -286,3 +286,15 @@ published automatically.
 Vercel Cron calls `GET /cron/review-requests` once a day (`bot/vercel.json`, 18:00 UTC; Hobby plans allow one run a
 day). Set `CRON_SECRET` (a long random string) on the **nayo-bot** Vercel project: Vercel then sends it as
 `Authorization: Bearer …`. Without it the endpoint answers 503 and nothing is sent.
+
+
+## Meta Pixel + Conversions API
+
+On every new order, `POST /orders` sends a `Purchase` to Meta's Conversions API with the same `event_id` as the
+browser Pixel (`purchase-<clientId>`), so Meta counts it once. Phone, name, city and country are normalized and
+SHA-256 hashed in the bot; the visitor's IP, user agent and `_fbp` / `_fbc` cookies are forwarded as Meta expects.
+A Meta failure is logged and never blocks the order (3 s timeout).
+
+Vercel env on **nayo-bot**: `META_PIXEL_ID`, `META_CAPI_TOKEN` (secret), and temporarily `META_TEST_EVENT_CODE` to see
+events in Events Manager → "Événements de test" (remove it afterwards: test events are not used for ads).
+On **nayo** (site): `VITE_META_PIXEL_ID` (same id; public by nature).
