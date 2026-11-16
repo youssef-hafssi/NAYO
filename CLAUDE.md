@@ -11,6 +11,10 @@ Pixel-accurate recreation of two approved designs (landing + checkout) for the N
   illustratifs" + perks row) → "Pourquoi NAYO est efficace ?" (owner infographic, nayo-pourquoi-*.webp) → FAQ "Pour
   répondre à vos questions" (owner's answers) → "Elles ont choisi NAYO" (nayo-lifestyle-*.webp + button to the form).
   The old benefits strip and description section were folded into "30 jours de soin".
+- Meta tracking: browser Pixel (`src/lib/pixel.ts`, VITE_META_PIXEL_ID; never on /admin; PageView, ViewContent,
+  InitiateCheckout, Purchase) + Conversions API from the bot on each NEW order (`bot/app/meta.py`, META_PIXEL_ID,
+  META_CAPI_TOKEN secret in Vercel only, optional META_TEST_EVENT_CODE). Same event_id "purchase-<clientId>" on both
+  sides (deduplication). Customer data hashed in the bot; tracking fields can never make an order fail.
 - Bot: an address alone is a complete delivery address (recap, then "oui"); the city column is filled from it when it
   names a known Moroccan city (`bot/app/cities.py`), otherwise left empty — never asked separately.
 - Formula wording: "éclaircit / unifie le teint" (never "blanchit"); only claim = Super Fruit Enzyme Triple Blend +

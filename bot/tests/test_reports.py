@@ -38,6 +38,8 @@ def test_sales_and_delivery_reports(world):  # noqa: F811
     assert s["totals"]["orders"] == 5 and s["totals"]["confirmed"] == 5  # A B C D F created on the 5th
     assert s["totals"]["avg_basket_cents"] == round(81600 / 3)
     assert s["totals"]["confirmation_rate"] == 1.0  # confirmed ÷ decided (pending orders excluded), like the dashboard
+    # fixed confirmation times (the fixture confirms "now"), so the delay doesn't depend on the day the test runs
+    fin.store._exec("UPDATE orders SET confirmed_at = '2026-11-05 11:00:00' WHERE order_number IN ('A', 'B', 'C', 'D', 'F')")
     d = rep.delivery(*PERIOD)
     assert (d["delivered"], d["returned"]) == (3, 1) and d["return_rate"] == 0.25
     assert d["avg_delay_days"] is not None and d["avg_delay_days"] >= 0

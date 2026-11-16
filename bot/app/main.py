@@ -81,6 +81,18 @@ def create_app(services: Services | None = None, settings: Settings | None = Non
     if services:
         state["s"] = services
 
+    _meta: dict[str, Any] = {}
+
+    def meta() -> Any:
+        if "m" not in _meta:
+            from .meta import MetaCapi
+
+            _meta["m"] = MetaCapi(settings.meta_pixel_id, settings.meta_capi_token, settings.graph_api_version,
+                                  settings.meta_test_event_code)
+        return _meta["m"]
+
+    app_state_meta = meta  # exposed on the app for tests
+
     def svc() -> Services:
         if "s" not in state:
             state["s"] = build_services(settings)
@@ -136,7 +148,7 @@ def create_app(services: Services | None = None, settings: Settings | None = Non
             log.warning("order rate limit hit for an IP")
             raise HTTPException(429, "too many orders")
         raw = await request.body()
-        if len(raw) > 4000:
+        if len(raw) > 8000:  # a real order is < 2 KB; room for long ad-click URLs / Meta cookies
             raise HTTPException(413, "payload too large")
         try:
             body = OrderIn.model_validate_json(raw)
@@ -145,11 +157,26 @@ def create_app(services: Services | None = None, settings: Settings | None = Non
             fields = sorted({".".join(str(p) for p in err.get("loc", ())) for err in errors})
             return JSONResponse({"detail": "invalid order", "fields": fields}, status_code=422)
         s.store.hit(f"ip:{ip}")
+        created: list[dict] = []
         try:
-            return create_order(body, s.orders, s.store)
+            out = create_order(body, s.orders, s.store, on_created=created.append)
         except Exception:
             log.exception("could not save order")
             raise HTTPException(503, "order storage unavailable")
+        if created and meta().enabled:
+            # Same event_id as the browser Pixel ("purchase-<clientId>"): Meta counts the purchase once.
+            from .meta import purchase_event, user_data
+
+            row = created[0]
+            event = purchase_event(
+                event_id=f"purchase-{body.clientId}", value=out.total, quantity=out.quantity,
+                order_number=out.orderNumber, source_url=body.pageUrl or "",
+                ud=user_data(phone=body.phone, name=body.name, city=row.get("city", ""), ip=ip,
+                             user_agent=request.headers.get("user-agent", ""), fbp=body.fbp or "", fbc=body.fbc or "",
+                             external_id=body.phone),
+            )
+            await run_in_threadpool(meta().send, [event])  # ≤ 3 s; a failure never blocks the order
+        return out
 
     @app.get("/webhook")
     def verify_webhook(request: Request) -> Any:
@@ -186,6 +213,8 @@ def create_app(services: Services | None = None, settings: Settings | None = Non
     from .admin import build_admin_router
 
     app.include_router(build_admin_router(svc, settings))  # /admin/* (team inbox)
+    app.state.meta = app_state_meta
+    app.state.meta_box = _meta
     return app
 
 
