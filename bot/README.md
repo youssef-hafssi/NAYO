@@ -288,12 +288,20 @@ day). Set `CRON_SECRET` (a long random string) on the **nayo-bot** Vercel projec
 `Authorization: Bearer …`. Without it the endpoint answers 503 and nothing is sent.
 
 
-## Meta Pixel + Conversions API
+## Meta Pixel + Conversions API (cash on delivery)
 
-On every new order, `POST /orders` sends a `Purchase` to Meta's Conversions API with the same `event_id` as the
-browser Pixel (`purchase-<clientId>`), so Meta counts it once. Phone, name, city and country are normalized and
-SHA-256 hashed in the bot; the visitor's IP, user agent and `_fbp` / `_fbc` cookies are forwarded as Meta expects.
-A Meta failure is logged and never blocks the order (3 s timeout).
+| Moment | Event | Sent by |
+|---|---|---|
+| Order placed (site) | `Lead` (event_id = order number) | browser Pixel **and** bot — Meta counts it once |
+| Order confirmed (WhatsApp "oui", admin, bulk) | `Purchase` (value = total, MAD) | bot |
+| Delivered | `OrderDelivered` | bot |
+| Returned | `OrderReturned` | bot |
+
+Each event is sent at most once per order (`meta_events` table) and never when its moment is more than 7 days old.
+Status events come from `TrackedOrders`, the outermost orders wrapper, so every path (bot, admin, bulk) counts.
+Phone, name, city and country are normalized and SHA-256 hashed; the browser's IP, user agent and `_fbp` / `_fbc`
+are forwarded with the Lead, and `_fbp` / `_fbc` are kept (`meta_orders`) for the later events. A Meta failure is
+logged and never blocks an order or a status change (3 s timeout).
 
 Vercel env on **nayo-bot**: `META_PIXEL_ID`, `META_CAPI_TOKEN` (secret), and temporarily `META_TEST_EVENT_CODE` to see
 events in Events Manager → "Événements de test" (remove it afterwards: test events are not used for ads).

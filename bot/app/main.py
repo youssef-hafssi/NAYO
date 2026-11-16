@@ -55,6 +55,11 @@ def build_services(settings: Settings) -> Services:
     orders = StockOrders(orders, Stock(store))  # every status/quantity change keeps the stock in line
     if settings.sheet_webhook_url:
         orders = MirroredOrders(orders, settings.sheet_webhook_url, settings.sheet_webhook_secret)
+    from .meta import MetaCapi, MetaTracker, TrackedOrders
+
+    # Outermost: confirmed / delivered / returned → Purchase / OrderDelivered / OrderReturned (Meta, once per order).
+    orders = TrackedOrders(orders, MetaTracker(store, MetaCapi(settings.meta_pixel_id, settings.meta_capi_token,
+                                                               settings.graph_api_version, settings.meta_test_event_code)))
     wa = WhatsAppClient(settings.whatsapp_token, settings.whatsapp_phone_number_id, settings.graph_api_version)
     ai = GeminiAI(
         settings.gemini_api_key,
@@ -92,6 +97,17 @@ def create_app(services: Services | None = None, settings: Settings | None = Non
         return _meta["m"]
 
     app_state_meta = meta  # exposed on the app for tests
+
+    def tracker() -> Any:
+        """The orders' tracker in production (TrackedOrders); otherwise one on this app's store + Conversions API."""
+        own = getattr(svc().orders, "meta", None)
+        if own is not None:
+            return own
+        from .meta import MetaTracker
+
+        if _meta.get("t") is None or _meta["t"].store is not svc().store or _meta["t"].capi is not meta():
+            _meta["t"] = MetaTracker(svc().store, meta())
+        return _meta["t"]
 
     def svc() -> Services:
         if "s" not in state:
@@ -163,19 +179,14 @@ def create_app(services: Services | None = None, settings: Settings | None = Non
         except Exception:
             log.exception("could not save order")
             raise HTTPException(503, "order storage unavailable")
-        if created and meta().enabled:
-            # Same event_id as the browser Pixel ("purchase-<clientId>"): Meta counts the purchase once.
-            from .meta import purchase_event, user_data
-
+        if created:
+            # Lead: same event_id as the browser Pixel (the order number) → Meta counts it once.
             row = created[0]
-            event = purchase_event(
-                event_id=f"purchase-{body.clientId}", value=out.total, quantity=out.quantity,
-                order_number=out.orderNumber, source_url=body.pageUrl or "",
-                ud=user_data(phone=body.phone, name=body.name, city=row.get("city", ""), ip=ip,
-                             user_agent=request.headers.get("user-agent", ""), fbp=body.fbp or "", fbc=body.fbc or "",
-                             external_id=body.phone),
-            )
-            await run_in_threadpool(meta().send, [event])  # ≤ 3 s; a failure never blocks the order
+            await run_in_threadpool(
+                lambda: tracker().lead(
+                    order_number=out.orderNumber, total=out.total, quantity=out.quantity, phone=body.phone,
+                    name=body.name, city=row.get("city", ""), ip=ip, user_agent=request.headers.get("user-agent", ""),
+                    fbp=body.fbp or "", fbc=body.fbc or "", source_url=body.pageUrl or ""))  # ≤ 3 s, never blocks
         return out
 
     @app.get("/webhook")

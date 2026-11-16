@@ -12,6 +12,12 @@ Pixel-accurate recreation of two approved designs (landing + checkout) for the N
   reviews from `REVIEWS` in content.ts (copied word for word from admin → Clients → "Avis"; never write one); while
   it is empty they show the 3 brand statements (no quotes, names or stars). Benefits / hero perks: "Unifie
   progressivement le teint", "Formule douce", "Fraîcheur toute la journée".
+- Meta tracking (cash on delivery): browser Pixel (`src/lib/pixel.ts`, VITE_META_PIXEL_ID, never on /admin):
+  PageView, ViewContent, InitiateCheckout, Lead at order placement. Bot Conversions API (`bot/app/meta.py`,
+  META_PIXEL_ID, META_CAPI_TOKEN secret in Vercel only, optional META_TEST_EVENT_CODE): Lead (same event_id = order
+  number), then Purchase on confirmed, OrderDelivered, OrderReturned — once per order (meta_events), never older than
+  7 days, sent from `TrackedOrders` (outermost orders wrapper, so bot / admin / bulk all count). Customer data hashed;
+  tracking can never make an order fail. No consent banner (owner's choice); footer line "Ce site mesure son audience".
 - Bot: an address alone is a complete delivery address (recap, then "oui"); the city column is filled from it when it
   names a known Moroccan city (`bot/app/cities.py`), otherwise left empty — never asked separately.
 - Formula wording: "éclaircit / unifie le teint" (never "blanchit"); only claim = Super Fruit Enzyme Triple Blend +

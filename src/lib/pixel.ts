@@ -1,6 +1,7 @@
 /*
- * Meta Pixel (browser side). The bot sends the same Purchase through the Conversions API with the same event_id
- * ("purchase-<clientId>"), so Meta counts each order once.
+ * Meta Pixel (browser side), cash on delivery: the order placed is a Lead, sent here AND by the bot (Conversions API)
+ * with the same event_id — the order number — so Meta counts it once. Purchase / OrderDelivered / OrderReturned are
+ * sent by the bot only, when the order is confirmed / delivered / returned (bot/app/meta.py).
  *
  * - Loads only when VITE_META_PIXEL_ID is set, and never on /admin.
  * - The script is loaded after the page has rendered; events fired before that are queued by the standard stub.

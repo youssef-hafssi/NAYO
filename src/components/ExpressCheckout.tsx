@@ -76,8 +76,9 @@ export function ExpressCheckout() {
       status: 'new',
       createdAt: new Date().toISOString(),
     })
-    // Same event_id as the bot's Conversions API event: Meta counts this purchase once.
-    track('Purchase', { ...PRODUCT_EVENT, value: result.total, num_items: qty, contents: [{ id: 'nayo-deodorant', quantity: qty }] }, `purchase-${clientId}`)
+    // Cash on delivery: placing the order is a Lead (Purchase comes from the bot once the order is confirmed).
+    // Same event_id as the bot's Conversions API Lead (the order number): Meta counts it once.
+    track('Lead', { ...PRODUCT_EVENT, value: result.total, num_items: qty, contents: [{ id: 'nayo-deodorant', quantity: qty }] }, result.orderNumber)
     setPlaced({ orderNumber: result.orderNumber, total: result.total, name })
     setStatus('done')
   }
