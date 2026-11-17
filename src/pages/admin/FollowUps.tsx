@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState, type FormEvent } from 'react'
 import { Link } from 'react-router-dom'
 import { Lightbulb, MessageSquare } from 'lucide-react'
-import { adminApi, Unauthorized, type Suggestion, type Task, type TaskView } from '../../lib/adminApi'
+import { adminApi, isSuperadmin, Unauthorized, type Suggestion, type Task, type TaskView } from '../../lib/adminApi'
 import { useAuth } from './AdminApp'
 import { Banner, BusyButton, Chip, FieldLabel, fmtDateTime, formatPhone, inputClass, Skeleton } from './ui'
 
@@ -194,6 +194,7 @@ export default function FollowUps() {
 }
 
 function Links({ phone, order }: { phone: string; order: string }) {
+  const { me } = useAuth()
   if (!phone && !order) return null
   return (
     <p className="mt-2 flex flex-wrap gap-x-12 gap-y-2 fs-12.5">
@@ -202,11 +203,14 @@ function Links({ phone, order }: { phone: string; order: string }) {
           {order}
         </Link>
       )}
-      {phone && (
-        <Link to={`/admin/customers/${phone}`} className="text-[#6b6b6b] underline">
-          {formatPhone(phone)}
-        </Link>
-      )}
+      {phone &&
+        (isSuperadmin(me) ? (
+          <Link to={`/admin/customers/${phone}`} className="text-[#6b6b6b] underline">
+            {formatPhone(phone)}
+          </Link>
+        ) : (
+          <span className="text-[#6b6b6b]">{formatPhone(phone)}</span>
+        ))}
       {phone && (
         <Link to={`/admin/inbox?phone=${phone}`} className="inline-flex items-center gap-4 text-[#6b6b6b] underline">
           <MessageSquare className="size-12" aria-hidden /> Écrire dans l'inbox

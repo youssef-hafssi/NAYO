@@ -25,8 +25,51 @@ export type Status =
   | 'needs_human'
   | ''
 export type SettableStatus = 'confirmed' | 'shipped' | 'delivered' | 'returned' | 'cancelled' | 'needs_human'
-export type Role = 'owner' | 'agent'
+export type Role = 'superadmin' | 'owner' | 'agent'
 export type Me = { name: string; email: string; role: Role; online: number }
+export const ROLE_NAME: Record<Role, string> = { superadmin: 'Super-administrateur', owner: 'Propriétaire', agent: 'Agent' }
+/** Owner rights (money, stock, team, settings…): owners and the superadmin. The server enforces every rule. */
+export const isOwner = (me: { role: Role }) => me.role === 'owner' || me.role === 'superadmin'
+/** Clients, Visiteurs (and later Publicité), customer & order CSV exports. */
+export const isSuperadmin = (me: { role: Role }) => me.role === 'superadmin'
+
+// ---- Visiteurs (first-party analytics, superadmin only)
+export type VisitSession = {
+  session_id: string
+  visitor_id: string
+  started_at: number
+  last_at: number
+  source: string
+  utm_source: string
+  utm_medium: string
+  utm_campaign: string
+  utm_content: string
+  utm_term: string
+  referrer: string
+  landing: string
+  device: string
+  in_app: string
+  lang: string
+  country: string
+  city: string
+  screen_w: number
+  events_count: number
+  max_scroll: number
+  reached_checkout: boolean
+  form_started: boolean
+  submitted: boolean
+  ordered: boolean
+  order_number: string
+}
+export type VisitorsOverview = {
+  days: { day: string; visits: number; visitors: number; orders: number }[]
+  totals: { visits: number; visitors: number; orders: number }
+  sources: { source: string; visits: number; orders: number }[]
+  devices: { device: string; visits: number }[]
+  in_app: { app: string; visits: number }[]
+  funnel: { visits: number; scroll_50: number; form_started: number; ordered: number }
+}
+export type VisitEvent = { at: number; name: string; data: Record<string, string | number | boolean> }
 export type Filter = 'all' | 'needs_human' | 'confirmed' | 'cancelled'
 
 export type ConversationItem = {
@@ -554,6 +597,11 @@ export const adminApi = {
     get<{ items: OrderRow[]; has_more: boolean; counts: Record<Status, number>; cities?: string[] }>(
       `/orders?${orderQs(f)}&limit=50&offset=${offset}`,
     ),
+  analyticsOverview: (days: 7 | 30 | 90) => get<VisitorsOverview>(`/analytics/overview?days=${days}`),
+  analyticsSessions: (offset = 0, orders = false) =>
+    get<{ items: VisitSession[]; has_more: boolean }>(`/analytics/sessions?limit=50&offset=${offset}${orders ? '&orders=true' : ''}`),
+  analyticsSession: (id: string) =>
+    get<{ session: VisitSession; events: VisitEvent[]; other_visits: VisitSession[] }>(`/analytics/sessions/${encodeURIComponent(id)}`),
   ordersCsvUrl: (f: OrderFilters) => `/bot-api/admin/orders.csv?${orderQs(f)}`,
   ordersBulk: (b: { order_numbers: string[]; status?: SettableStatus; carrier_id?: number; return_reason?: string }) =>
     call<{ done: string[]; errors: Record<string, string> }>('/orders/bulk', { method: 'POST', body: b }),

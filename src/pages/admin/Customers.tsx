@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { Download, Search } from 'lucide-react'
 import { adminApi, Unauthorized, type Customer, type Segment } from '../../lib/adminApi'
+import { isOwner } from '../../lib/adminApi'
 import { useAuth } from './AdminApp'
 import { preloadRoute } from './preload'
 import { Flags } from './Orders'
@@ -18,7 +19,7 @@ const SORTS = [
 
 export default function Customers() {
   const { me, logout } = useAuth()
-  const owner = me.role === 'owner'
+  const owner = isOwner(me)
   const [q, setQ] = useState('')
   const dq = useDebounced(q)
   const [segment, setSegment] = useState<Segment | ''>('')

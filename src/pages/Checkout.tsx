@@ -6,6 +6,7 @@ import { Logo } from '../components/Logo'
 import { PRODUCT } from '../content'
 import { keepFlushing, newClientId, submitOrder, wakeBot } from '../lib/orders'
 import { metaOrderFields, pageView, PRODUCT_EVENT, track, trackOnce } from '../lib/pixel'
+import { flush, once, orderTrackingFields, pageView as visit, t } from '../lib/track'
 import { fmt, isValidPhone, MAX_QTY, normalizePhone, WHATSAPP_NUMBER, whatsappUrl } from '../lib/checkout'
 import { WhatsAppGlyph } from '../components/WhatsAppGlyph'
 
@@ -90,8 +91,18 @@ export default function Checkout() {
   // Free hosts sleep: wake the bot as soon as the checkout opens, so the order POST is fast.
   useEffect(() => wakeBot(), [])
   useEffect(() => pageView(), [])
+  useEffect(() => {
+    visit(false)
+    t('checkout_view', { form: 'commande' })
+  }, [])
   // Fallback orders saved locally are re-sent until the bot has them.
   useEffect(() => (status === 'done' ? keepFlushing() : undefined), [status])
+
+  const changeQty = (step: number) => {
+    const to = Math.min(MAX_QTY, Math.max(1, qty + step))
+    if (to !== qty) t('quantity_change', { form: 'commande', from: qty, to })
+    setQty(to)
+  }
 
   const submit = async (e: FormEvent) => {
     e.preventDefault()
@@ -100,6 +111,9 @@ export default function Checkout() {
     if (name.trim().length < 3) next.name = 'Veuillez saisir votre nom complet.'
     if (!isValidPhone(phone)) next.phone = 'Veuillez saisir un numéro marocain valide (ex. 06 12 34 56 78).'
     setErrors(next)
+    ;(Object.keys(next) as ('name' | 'phone')[]).forEach((field) =>
+      t('field_error', { form: 'commande', field, error: !(field === 'name' ? name : phone).trim() ? 'required' : field === 'phone' ? 'format' : 'too_short' }),
+    )
     if (Object.keys(next).length) {
       const first = next.name ? 'nom' : 'tel'
       document.getElementById(first)?.focus()
@@ -110,8 +124,10 @@ export default function Checkout() {
     const cleanName = name.trim().replace(/\s+/g, ' ')
     // Waits up to 10 s for the bot's number; otherwise a saved NAYO-W… fallback (retried in the background).
     const clientId = newClientId()
+    t('order_submit', { form: 'commande', qty })
     const result = await submitOrder({
       ...metaOrderFields(),
+      ...orderTrackingFields(),
       clientId,
       name: cleanName,
       phone: normalizePhone(phone),
@@ -130,6 +146,8 @@ export default function Checkout() {
     // Cash on delivery: placing the order is a Lead (Purchase comes from the bot once the order is confirmed).
     // Same event_id as the bot's Conversions API Lead (the order number): Meta counts it once.
     track('Lead', { ...PRODUCT_EVENT, value: result.total, num_items: qty, contents: [{ id: 'nayo-deodorant', quantity: qty }] }, result.orderNumber)
+    t('order_success', { form: 'commande', order: result.orderNumber, qty, fallback: result.fallback })
+    flush()
     setPlaced({ orderNumber: result.orderNumber, total: result.total, name: cleanName })
     setStatus('done')
   }
@@ -180,7 +198,10 @@ export default function Checkout() {
             <form
               noValidate
               onSubmit={submit}
-              onFocus={() => trackOnce('InitiateCheckout', { ...PRODUCT_EVENT, value: total, num_items: qty })}
+              onFocus={() => {
+                trackOnce('InitiateCheckout', { ...PRODUCT_EVENT, value: total, num_items: qty })
+                once('form:commande', 'form_start', { form: 'commande' })
+              }}
               className="order-3 lg:mt-52"
               aria-describedby="cod-note"
             >
@@ -200,6 +221,7 @@ export default function Checkout() {
                   {WHATSAPP_NUMBER && (
                     <a
                       href={whatsappUrl(placed.orderNumber, placed.total, placed.name)}
+                      data-track="whatsapp-confirm"
                       target="_blank"
                       rel="noopener noreferrer"
                       className="mt-18 flex min-h-60 w-full items-center justify-center gap-12 rounded-pill bg-gradient-to-b from-[#650a1a] to-[#55040f] px-20 py-10 fs-17 font-semibold text-white shadow-[0_10px_24px_rgba(92,7,21,0.22)] transition-[scale] duration-300 hover:scale-[1.015] lg:mt-26 lg:min-h-77 lg:gap-18 lg:fs-25"
@@ -340,8 +362,9 @@ export default function Checkout() {
                         <button
                           type="button"
                           aria-label="Retirer un déodorant"
+                          data-track="qty-minus"
                           disabled={qty <= 1}
-                          onClick={() => setQty((q) => Math.max(1, q - 1))}
+                          onClick={() => changeQty(-1)}
                           className="grid h-full w-32 place-items-center text-[#4a0108] transition-opacity disabled:opacity-30 lg:w-44"
                         >
                           <Minus className="size-14 lg:size-20" strokeWidth={2} aria-hidden />
@@ -352,8 +375,9 @@ export default function Checkout() {
                         <button
                           type="button"
                           aria-label="Ajouter un déodorant"
+                          data-track="qty-plus"
                           disabled={qty >= MAX_QTY}
-                          onClick={() => setQty((q) => Math.min(MAX_QTY, q + 1))}
+                          onClick={() => changeQty(1)}
                           className="grid h-full w-32 place-items-center text-[#4a0108] transition-opacity disabled:opacity-30 lg:w-44"
                         >
                           <Plus className="size-14 lg:size-20" strokeWidth={2} aria-hidden />

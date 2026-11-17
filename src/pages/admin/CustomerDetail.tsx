@@ -2,6 +2,7 @@ import { useCallback, useEffect, useLayoutEffect, useRef, useState, type FormEve
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { AlertTriangle, ArrowLeft, MessageSquare } from 'lucide-react'
 import { adminApi, Unauthorized, type Customer, type CustomerOrder, type Task } from '../../lib/adminApi'
+import { isOwner } from '../../lib/adminApi'
 import { useAuth } from './AdminApp'
 import { NewTaskForm, refreshBadge, TaskItem } from './FollowUps'
 import { PRODUCT } from '../../content'
@@ -201,7 +202,7 @@ export default function CustomerDetail() {
         <Stat label="Commandes" value={String(c.orders_count)} />
         <Stat label="Livrées" value={String(c.delivered)} />
         <Stat label="Retours / annulées" value={`${c.returned} / ${c.cancelled}`} />
-        {me.role === 'owner' && c.delivered_cents !== undefined ? (
+        {isOwner(me) && c.delivered_cents !== undefined ? (
           <Stat label="Valeur livrée" value={fmtMoney(c.delivered_cents)} />
         ) : (
           <Stat label="Dernière commande" value={c.last_order ? fmtDate(c.last_order) : '—'} />

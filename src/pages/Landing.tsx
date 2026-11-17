@@ -13,6 +13,7 @@ import { ExpressCheckout } from '../components/ExpressCheckout'
 import { Faq } from '../components/Faq'
 import { Footer } from '../components/Footer'
 import { pageView, PRODUCT_EVENT, track } from '../lib/pixel'
+import { pageView as visit } from '../lib/track'
 import { PRODUCT } from '../content'
 
 gsap.registerPlugin(ScrollTrigger)
@@ -23,6 +24,7 @@ export default function Landing() {
   // Meta Pixel: page view + the product seen (no-op when VITE_META_PIXEL_ID isn't set).
   useEffect(() => {
     pageView()
+    visit() // first-party analytics: page view, scroll depth, sections (src/lib/track.ts)
     track('ViewContent', { ...PRODUCT_EVENT, value: PRODUCT.price, content_name: PRODUCT.name })
   }, [])
 

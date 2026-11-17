@@ -2,6 +2,7 @@ import { useCallback, useEffect, useLayoutEffect, useRef, useState, type FormEve
 import { useNavigate, useParams } from 'react-router-dom'
 import { ArrowLeft } from 'lucide-react'
 import { adminApi, Unauthorized, type PurchaseOrder, type Receipt, type Supplier, type SupplierPayment } from '../../lib/adminApi'
+import { isOwner } from '../../lib/adminApi'
 import { useAuth } from './AdminApp'
 import { BusyButton, FieldLabel, fmtDate, fmtDateTime, fmtMoney, inputClass, METHOD_LABEL, parseMad, PAYMENT_LABEL, Pill, PO_STATUS_LABEL, PO_STATUS_PILL, PageSkeleton } from './ui'
 
@@ -79,7 +80,7 @@ export default function PurchaseOrderDetail() {
     }
   }
 
-  if (me.role !== 'owner') return <div className="p-24 fs-14 text-[#8a8a8a]">Réservé au propriétaire.</div>
+  if (!isOwner(me)) return <div className="p-24 fs-14 text-[#8a8a8a]">Réservé au propriétaire.</div>
   if (!po) return message ? <div className="p-24 fs-14 text-[#8a8a8a]">{message.text}</div> : <PageSkeleton tiles={false} />
 
   const receive = (e: FormEvent) => {

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState, type FormEvent } from 'react'
 import { Link } from 'react-router-dom'
 import { adminApi, Unauthorized, type StockMovement, type StockSummary } from '../../lib/adminApi'
+import { isOwner } from '../../lib/adminApi'
 import { useAuth } from './AdminApp'
 import { BusyButton, FieldLabel, fmtDateTime, fmtMoney, inputClass, STOCK_REASON, PageSkeleton } from './ui'
 
@@ -13,7 +14,7 @@ type Mode = null | 'restock' | 'adjust'
 
 export default function Stock() {
   const { me, logout } = useAuth()
-  const owner = me.role === 'owner'
+  const owner = isOwner(me)
   // Last data of this session, shown at once (stale-while-revalidate).
   const [summary, setSummary] = useState<StockSummary | null>(() => adminApi.stock().peek() ?? null)
   const [moves, setMoves] = useState<StockMovement[]>(() => adminApi.stockMovements().peek()?.items ?? [])

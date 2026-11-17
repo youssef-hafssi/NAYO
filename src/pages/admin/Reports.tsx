@@ -12,6 +12,7 @@ import {
   type SalesReport,
   type StockReport,
 } from '../../lib/adminApi'
+import { isOwner } from '../../lib/adminApi'
 import { useAuth } from './AdminApp'
 import { BarChart } from './Dashboard'
 import { Banner, Chip, FieldLabel, fmtDate, fmtMoney, inputClass, STATUS_LABEL, STOCK_REASON, Skeleton } from './ui'
@@ -65,7 +66,7 @@ export default function Reports() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [key, fail])
 
-  if (me.role !== 'owner')
+  if (!isOwner(me))
     return (
       <div className="mx-auto w-full max-w-1100 px-16 py-16 md:px-24 md:py-24">
         <h1 className="fs-22 font-bold">Rapports</h1>

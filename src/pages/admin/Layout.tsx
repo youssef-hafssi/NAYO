@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useLayoutEffect, useState } from 'react'
 import { NavLink, Outlet, useLocation } from 'react-router-dom'
-import { BarChart3, BellRing, Settings as SettingsIcon, UserCog, ClipboardList, LayoutDashboard, MessageSquare, MoreHorizontal, Package, ShoppingCart, Truck, Users, Wallet, type LucideIcon } from 'lucide-react'
-import { adminApi } from '../../lib/adminApi'
+import { Activity, BarChart3, BellRing, Settings as SettingsIcon, UserCog, ClipboardList, LayoutDashboard, MessageSquare, MoreHorizontal, Package, ShoppingCart, Truck, Users, Wallet, type LucideIcon } from 'lucide-react'
+import { adminApi, isOwner, isSuperadmin, type Me } from '../../lib/adminApi'
 import { useAuth } from './AdminApp'
 import { preloadRoute } from './preload'
 import { usePolling, WINE } from './ui'
@@ -11,21 +11,24 @@ import { usePolling, WINE } from './ui'
  * Pages are added to NAV as each phase ships (Tableau de bord, Inbox, Commandes, Clients, Stock, Plus).
  */
 
-type NavItem = { to: string; label: string; icon: LucideIcon; ownerOnly?: boolean; badge?: number }
+// level: 'owner' = owners and the superadmin; 'super' = the superadmin only (Clients, Visiteurs, later Publicité).
+type NavItem = { to: string; label: string; icon: LucideIcon; level?: 'owner' | 'super'; badge?: number }
+export const canSee = (i: NavItem, me: Me) => (i.level === 'super' ? isSuperadmin(me) : i.level === 'owner' ? isOwner(me) : true)
 
 export const NAV: NavItem[] = [
   { to: '/admin/dashboard', label: 'Accueil', icon: LayoutDashboard },
   { to: '/admin/inbox', label: 'Inbox', icon: MessageSquare },
   { to: '/admin/orders', label: 'Commandes', icon: ClipboardList },
   { to: '/admin/follow-ups', label: 'Relances', icon: BellRing },
-  { to: '/admin/customers', label: 'Clients', icon: Users },
+  { to: '/admin/customers', label: 'Clients', icon: Users, level: 'super' },
   { to: '/admin/delivery', label: 'Livraisons', icon: Truck },
   { to: '/admin/stock', label: 'Stock', icon: Package },
-  { to: '/admin/purchasing', label: 'Achats', icon: ShoppingCart, ownerOnly: true },
-  { to: '/admin/finance', label: 'Finance', icon: Wallet, ownerOnly: true },
-  { to: '/admin/reports', label: 'Rapports', icon: BarChart3, ownerOnly: true },
-  { to: '/admin/team', label: 'Équipe', icon: UserCog, ownerOnly: true },
-  { to: '/admin/settings', label: 'Réglages', icon: SettingsIcon, ownerOnly: true },
+  { to: '/admin/purchasing', label: 'Achats', icon: ShoppingCart, level: 'owner' },
+  { to: '/admin/finance', label: 'Finance', icon: Wallet, level: 'owner' },
+  { to: '/admin/reports', label: 'Rapports', icon: BarChart3, level: 'owner' },
+  { to: '/admin/visitors', label: 'Visiteurs', icon: Activity, level: 'super' },
+  { to: '/admin/team', label: 'Équipe', icon: UserCog, level: 'owner' },
+  { to: '/admin/settings', label: 'Réglages', icon: SettingsIcon, level: 'owner' },
   { to: '/admin/plus', label: 'Plus', icon: MoreHorizontal },
 ]
 
@@ -62,7 +65,7 @@ export default function Layout() {
 
   const { me } = useAuth()
   const badge = useTaskBadge()
-  const items = NAV.filter((i) => !i.ownerOnly || me.role === 'owner').map((i) =>
+  const items = NAV.filter((i) => canSee(i, me)).map((i) =>
     i.to === '/admin/follow-ups' ? { ...i, badge } : i,
   )
   // Phones: 4 tabs + "Plus" (the Plus page lists the other screens).

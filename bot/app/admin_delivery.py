@@ -9,6 +9,8 @@ from __future__ import annotations
 from typing import Any, Callable, Literal
 
 from fastapi import APIRouter, Depends, HTTPException
+
+from .admin import is_owner
 from pydantic import BaseModel, Field
 
 from .delivery import Delivery, DeliveryError
@@ -62,7 +64,7 @@ def add_delivery_routes(router: APIRouter, svc: Callable[[], Any], current_admin
             raise HTTPException(409, str(e))
 
     def _public(c: dict[str, Any], admin: dict) -> dict[str, Any]:
-        if admin.get("role") == "owner":
+        if is_owner(admin):
             return c
         return {k: c[k] for k in ("id", "name", "phone", "active")}
 
@@ -98,7 +100,7 @@ def add_delivery_routes(router: APIRouter, svc: Callable[[], Any], current_admin
         if not 1 <= limit <= 200 or offset < 0:
             raise HTTPException(400, "pagination invalide")
         page = delivery().board(status, carrier_id, limit, offset)
-        if admin.get("role") != "owner":
+        if not is_owner(admin):
             for o in page["items"]:
                 o.pop("carrier_fee_cents", None)
         return page

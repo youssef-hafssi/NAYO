@@ -1,6 +1,6 @@
 import { createContext, lazy, Suspense, useCallback, useContext, useEffect, useLayoutEffect, useState, type ReactNode } from 'react'
 import { Navigate, Route, Routes } from 'react-router-dom'
-import { adminApi, type Me } from '../../lib/adminApi'
+import { adminApi, isSuperadmin, type Me } from '../../lib/adminApi'
 import { clearCache } from '../../lib/query'
 import Layout from './Layout'
 import Login from './Login'
@@ -23,12 +23,13 @@ const Reports = lazy(PAGES.reports)
 const Account = lazy(PAGES.account)
 const Team = lazy(PAGES.team)
 const Settings = lazy(PAGES.settings)
+const Visitors = lazy(PAGES.visitors)
 const ClosingPrint = lazy(() => import('./ClosingPrint'))
 const DeliveryPrint = lazy(() => import('./DeliveryPrint'))
 
 /*
  * /admin — team back-office. Login first, then nested pages inside the shared layout (sidebar on desktop,
- * bottom tab bar on phones). The role ('owner' | 'agent') only hides UI: the server enforces every rule.
+ * bottom tab bar on phones). The role ('superadmin' | 'owner' | 'agent') only hides UI: the server enforces every rule.
  * /me is loaded once per session (and again only after a 401 → login). Page data is cached in memory for the
  * session (src/lib/query.ts) and cleared on logout.
  */
@@ -44,6 +45,9 @@ export function useAuth(): Auth {
 
 /** A lazily loaded page: the layout stays, a skeleton shows until its code is there (never a blank page). */
 const page = (el: ReactNode, tiles = true) => <Suspense fallback={<PageSkeleton tiles={tiles} />}>{el}</Suspense>
+
+/** Clients / Visiteurs for a non-superadmin (menu hidden; the server answers 403 anyway). */
+const Restricted = () => <div className="p-24 fs-14 text-[#8a8a8a]">Réservé au super-administrateur.</div>
 
 export default function AdminApp() {
   const [state, setState] = useState<'checking' | 'login' | 'in'>('checking')
@@ -64,7 +68,7 @@ export default function AdminApp() {
     adminApi
       .me()
       .then((m) => {
-        setPreloadRole(m.role === 'owner')
+        setPreloadRole(m.role)
         setMe(m)
         setState('in')
         preloadAllChunks() // every page's code, once the browser is idle
@@ -94,8 +98,9 @@ export default function AdminApp() {
           <Route path="inbox" element={<Inbox onLogout={logout} />} />
           <Route path="orders" element={page(<Orders />, false)} />
           <Route path="orders/:number" element={page(<OrderDetail />, false)} />
-          <Route path="customers" element={page(<Customers />, false)} />
-          <Route path="customers/:phone" element={page(<CustomerDetail />)} />
+          <Route path="customers" element={isSuperadmin(me) ? page(<Customers />, false) : <Restricted />} />
+          <Route path="customers/:phone" element={isSuperadmin(me) ? page(<CustomerDetail />) : <Restricted />} />
+          <Route path="visitors" element={isSuperadmin(me) ? page(<Visitors />) : <Restricted />} />
           <Route path="follow-ups" element={page(<FollowUps />, false)} />
           <Route path="delivery" element={page(<Delivery />, false)} />
           <Route path="stock" element={page(<Stock />)} />

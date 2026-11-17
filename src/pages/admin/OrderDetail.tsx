@@ -2,6 +2,7 @@ import { useCallback, useEffect, useLayoutEffect, useRef, useState, type FormEve
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { AlertTriangle, ArrowLeft, MessageSquare, User } from 'lucide-react'
 import { adminApi, Unauthorized, type AuditEntry, type FullOrder, type OrderEdit, type SettableStatus, type StockMovement, type Carrier, type Message, type OrderCustomer } from '../../lib/adminApi'
+import { isOwner, isSuperadmin } from '../../lib/adminApi'
 import { useAuth } from './AdminApp'
 import { BusyButton, Chip, FieldLabel, fmtDateTime, hhmm, Pill, SEGMENT_LABEL, SEGMENT_PILL, fmtMoney, formatPhone, inputClass, parseMad, StatusPill, STOCK_REASON, withStockConfirm, PageSkeleton } from './ui'
 
@@ -249,12 +250,18 @@ export default function OrderDetail() {
 
       {customer && (
         <div className="mt-10 flex flex-wrap items-center gap-8">
-          <Link
-            to={`/admin/customers/${order.phone}`}
-            className="inline-flex h-40 items-center gap-6 r-10 border border-[#e2d6d0] bg-white px-12 fs-13 font-semibold"
-          >
-            <User className="size-16" aria-hidden /> Fiche client · {customer.orders_count} commande{customer.orders_count > 1 ? 's' : ''}
-          </Link>
+          {isSuperadmin(me) ? (
+            <Link
+              to={`/admin/customers/${order.phone}`}
+              className="inline-flex h-40 items-center gap-6 r-10 border border-[#e2d6d0] bg-white px-12 fs-13 font-semibold"
+            >
+              <User className="size-16" aria-hidden /> Fiche client · {customer.orders_count} commande{customer.orders_count > 1 ? 's' : ''}
+            </Link>
+          ) : (
+            <span className="inline-flex h-40 items-center gap-6 fs-13 font-semibold text-[#5a5050]">
+              <User className="size-16" aria-hidden /> {customer.orders_count} commande{customer.orders_count > 1 ? 's' : ''}
+            </span>
+          )}
           <Pill className={SEGMENT_PILL[customer.segment]}>{SEGMENT_LABEL[customer.segment]}</Pill>
           {customer.returned > 0 && (
             <span className="inline-flex items-center gap-4 r-5 bg-[#fbe5e5] px-8 py-2 fs-12 font-semibold text-[#a12a2a]">
@@ -335,7 +342,7 @@ export default function OrderDetail() {
           {order.cod_status === 'remitted' && <Pill className="bg-[#dff3e6] text-[#17703c]">Encaissée</Pill>}
           {order.cod_status === 'none' && <Pill className="bg-[#efefef] text-[#6b6b6b]">Rien à encaisser</Pill>}
         </div>
-        {me.role === 'owner' && (order.status === 'delivered' || order.status === 'returned') && (
+        {isOwner(me) && (order.status === 'delivered' || order.status === 'returned') && (
           <div className="mt-12 flex flex-wrap items-end gap-10">
             <div className="w-180">
               <FieldLabel htmlFor="od-fee">Frais du livreur (MAD)</FieldLabel>

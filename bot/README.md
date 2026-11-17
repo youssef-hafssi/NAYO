@@ -238,6 +238,17 @@ Tous / Besoin d'aide / Confirmées / Annulées), the thread, the order panel and
    The password is asked without being shown. Run it again to reset a password. `--sql` prints an INSERT
    statement to paste in Supabase → SQL editor instead.
 
+**Roles:** `superadmin` > `owner` > `agent`. Owners have every right except **Clients** (list, customer pages,
+tags, notes, reviews), **Visiteurs** (and later **Publicité**) and the **customer / order CSV exports**, which are for
+the superadmin only (hidden menus, 403 from the server). Only a superadmin can create, promote, demote, disable or
+reset a superadmin, and the last active superadmin can't be removed. Create the superadmin from your computer:
+```powershell
+.venv\Scripts\python create_superadmin.py --email youssef@admin.com --name "Youssef"
+```
+The password is typed twice in a hidden prompt (12 characters minimum). It is never an argument, never echoed, never
+written to a file or a log; only its scrypt hash reaches the database. Running it again resets the password and ends
+that account's open sessions.
+
 Local development: `npm run dev` forwards `/bot-api` to the bot on `http://127.0.0.1:8000`
 (override it with `BOT_PROXY_TARGET`).
 
@@ -286,3 +297,21 @@ published automatically.
 Vercel Cron calls `GET /cron/review-requests` once a day (`bot/vercel.json`, 18:00 UTC; Hobby plans allow one run a
 day). Set `CRON_SECRET` (a long random string) on the **nayo-bot** Vercel project: Vercel then sends it as
 `Authorization: Bearer …`. Without it the endpoint answers 503 and nothing is sent.
+
+## Visitor analytics (phase A, first-party)
+
+`src/lib/track.ts` (< 3 KB, no library, no cookie) sends anonymous events to `POST /t` (through the site's
+`/bot-api` rewrite) every 5 s and when the page is hidden: page_view, scroll_depth, section_view, click
+(`data-track` attributes), faq_open, checkout_view, form_start, field_error (field + error type, never the value),
+quantity_change, order_submit, order_success, whatsapp_click, time_on_page. IDs: a random `visitor_id`
+(localStorage) and a `session_id` (new after 30 min idle or a new campaign link).
+
+`bot/app/analytics.py` validates each batch (≤ 50 events, known names and keys only), drops bots (crawlers, link
+previews, headless / automated browsers) and over-eager visitors (30 batches a minute), and stores it in ONE statement
+on Postgres: `sessions` (first source, device, country / city from Vercel's headers — never the IP —, deepest scroll,
+checkout reached, form started, order) and `events` (the timeline). Orders keep `visitor_id`, `session_id` and the
+utm values (database only, never in the Google Sheet). Events older than 90 days are deleted by the daily cron
+`GET /cron/analytics-retention` (same `CRON_SECRET`); sessions are kept. Admin → **Visiteurs** (superadmin).
+
+Tests against a real Postgres (migrations on a fresh and on an existing database): set
+`NAYO_TEST_PG_URL=postgresql://user@127.0.0.1:5432/postgres` (a local throwaway server, never Supabase).

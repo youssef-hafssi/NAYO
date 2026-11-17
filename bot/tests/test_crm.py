@@ -22,7 +22,8 @@ def env(settings, store, bot):
     settings.admin_secret = "test-admin-secret"
     stock = Stock(store)
     orders = StockOrders(DbOrders(store), stock)
-    store.upsert_admin(uuid.uuid4().hex, "owner@nayo.ma", hash_password("motdepasse123"), "Karim")
+    # Clients and the CSV exports are superadmin-only: "owner" here is the superadmin (owners: test_access.py)
+    store.set_superadmin("owner@nayo.ma", "Karim", hash_password("motdepasse123"))
     store.upsert_admin(uuid.uuid4().hex, "agent@nayo.ma", hash_password("motdepasse123"), "Sara", role="agent")
     with TestClient(create_app(Services(settings, store, orders, bot))) as c:
         yield c, orders, stock, store
@@ -105,14 +106,16 @@ def test_customers_segments_tags_and_page(env):
     add(orders, "NAYO-3", B, "Youssef", status="returned")                  # B: a return → À risque
     add(orders, "NAYO-4", C, "Karima", status="delivered", created=ago(days=61))  # C: 61 days → Inactif
     add(orders, "NAYO-5", D, "Driss", status="new")                         # D: Nouveau
-    login(c, "agent")
+    login(c, "agent")  # Clients: superadmin only
+    for path in ("/admin/customers", f"/admin/customers/{A}", "/admin/customers.csv"):
+        assert c.get(path).status_code == 403
+    login(c)
     r = c.get("/admin/customers").json()
     seg = {x["phone"]: x["segment"] for x in r["items"]}
     assert seg == {A: "loyal", B: "at_risk", C: "inactive", D: "new"}
     assert r["counts"] == {"new": 1, "loyal": 1, "at_risk": 1, "inactive": 1}
     a = next(x for x in r["items"] if x["phone"] == A)
     assert (a["name"], a["orders_count"], a["delivered"]) == ("Salma B.", 2, 2)  # latest name
-    assert "delivered_cents" not in a  # money: owner only
     assert [x["phone"] for x in c.get("/admin/customers?segment=at_risk").json()["items"]] == [B]
     assert [x["phone"] for x in c.get("/admin/customers?q=0633").json()["items"]] == [C]
     # tags / note / name override
@@ -126,8 +129,6 @@ def test_customers_segments_tags_and_page(env):
     # the order detail warns when the customer returned an order before
     assert c.get("/admin/orders/NAYO-3").json()["customer"]["returned"] == 1
     assert c.get("/admin/customers/212699999999").status_code == 404
-    assert c.get("/admin/customers.csv").status_code == 403
-    login(c)
     assert c.get("/admin/customers").json()["items"][0]["delivered_cents"] >= 0
     x = c.get("/admin/customers.csv?segment=loyal")
     assert x.status_code == 200 and "Salma Bennani" in x.text and "VIP, Grossiste" in x.text and "Fidèle" in x.text
@@ -138,6 +139,8 @@ def test_new_order_from_customer_page(env):
     add(orders, "NAYO-1", A, "Salma", status="delivered", city="Fès", address="rue 5")
     store.next_counter("order", 1000) if hasattr(store, "next_counter") else None
     login(c, "agent")
+    assert c.post(f"/admin/customers/{A}/orders", json={"quantity": 2}).status_code == 403  # customer page: superadmin
+    login(c)
     r = c.post(f"/admin/customers/{A}/orders", json={"quantity": 2})
     assert r.status_code == 200, r.text
     o = orders.get(r.json()["order_number"])
@@ -196,6 +199,7 @@ def test_tasks_accept_dismiss_views_and_badge(env):
     assert c.post("/admin/tasks", json={"title": "x", "order_number": "NAYO-404"}).status_code == 422
     assert c.patch("/admin/tasks/999", json={"done": True}).status_code == 409
     assert store.audit_for("task", str(t["id"]))[0]["action"] == "task.create"
+    login(c)  # the customer page (superadmin) lists that customer's open tasks
     assert [x["id"] for x in c.get(f"/admin/customers/{A}").json()["tasks"]] == [t["id"]]  # open tasks only
     assert "Karim" in c.get("/admin/team").json()["names"]
 

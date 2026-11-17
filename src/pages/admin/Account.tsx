@@ -1,7 +1,7 @@
 import { useState, type FormEvent } from 'react'
 import { Link } from 'react-router-dom'
-import { NAV } from './Layout'
-import { adminApi, Unauthorized } from '../../lib/adminApi'
+import { NAV, canSee } from './Layout'
+import { adminApi, Unauthorized, ROLE_NAME } from '../../lib/adminApi'
 import { useAuth } from './AdminApp'
 import { BusyButton, FieldLabel, inputClass } from './ui'
 
@@ -42,12 +42,12 @@ export default function Account() {
     <div className="mx-auto w-full max-w-560 px-16 py-20 md:px-24 md:py-28">
       <h1 className="fs-22 font-bold">Mon compte</h1>
       <p className="mt-6 fs-14 text-[#5a5050]">
-        {me.name} · {me.email} · {me.role === 'owner' ? 'Propriétaire' : 'Agent'}
+        {me.name} · {me.email} · {ROLE_NAME[me.role]}
       </p>
 
       {/* Phones: the screens that don't fit in the bottom bar */}
       <nav aria-label="Autres écrans" className="mt-18 grid grid-cols-2 gap-8 md:hidden">
-        {NAV.filter((i) => (!i.ownerOnly || me.role === 'owner') && i.to !== '/admin/plus').map((i) => (
+        {NAV.filter((i) => canSee(i, me) && i.to !== '/admin/plus').map((i) => (
           <Link key={i.to} to={i.to} className="flex min-h-48 items-center gap-10 r-12 border border-[#ece2dd] bg-[#fbf8f6] px-14 fs-14 font-semibold">
             <i.icon className="size-18 text-[#3a0a10]" strokeWidth={1.8} aria-hidden />
             {i.label}

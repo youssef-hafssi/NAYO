@@ -95,7 +95,8 @@ def test_cron_endpoint_and_admin_view(settings, store, wa, ai):
     settings.admin_secret = "test-admin-secret"
     orders = DbOrders(store)
     bot = Bot(orders, store, wa, ai, clock=time.time)
-    store.upsert_admin(uuid.uuid4().hex, "owner@nayo.ma", hash_password("motdepasse123"), "Karim")
+    # Clients and the CSV exports are superadmin-only: "owner" here is the superadmin (owners: test_access.py)
+    store.set_superadmin("owner@nayo.ma", "Karim", hash_password("motdepasse123"))
     deliver(orders, "N1", CLIENT, 4)
     store.touch_client(CLIENT, time.time() - 600)
     with TestClient(create_app(Services(settings, store, orders, bot))) as c:

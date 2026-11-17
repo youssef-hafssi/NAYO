@@ -10,6 +10,7 @@ import {
   type SettableStatus,
   type Status,
 } from '../../lib/adminApi'
+import { isOwner, isSuperadmin } from '../../lib/adminApi'
 import { useAuth } from './AdminApp'
 import { preloadRoute } from './preload'
 import { Banner, BusyButton, Chip, FieldLabel, fmtDate, formatPhone, inputClass, STATUS_LABEL, StatusPill, useDebounced, Skeleton } from './ui'
@@ -33,7 +34,7 @@ type Msg = { kind: 'ok' | 'error'; text: string } | null
 
 export default function Orders() {
   const { me, logout } = useAuth()
-  const owner = me.role === 'owner'
+  const owner = isOwner(me)
   const navigate = useNavigate()
   const [q, setQ] = useState('')
   const dq = useDebounced(q)
@@ -169,7 +170,7 @@ export default function Orders() {
     <div className="mx-auto w-full max-w-1100 px-16 py-16 md:px-24 md:py-24">
       <div className="flex flex-wrap items-center justify-between gap-12">
         <h1 className="fs-22 font-bold">Commandes</h1>
-        {owner && (
+        {isSuperadmin(me) && (
           <a
             href={adminApi.ordersCsvUrl(filters)}
             className="inline-flex h-44 items-center gap-8 r-10 border border-[#d9cfca] bg-white px-14 fs-14 font-semibold hover:bg-[#faf6f3] md:h-40"

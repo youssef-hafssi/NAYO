@@ -4,6 +4,7 @@ import { PRODUCT } from '../content'
 import { ADDRESS_MAX, ADDRESS_MIN, fmt, isValidPhone, MAX_QTY, normalizePhone, WHATSAPP_NUMBER, whatsappUrl } from '../lib/checkout'
 import { keepFlushing, newClientId, submitOrder, wakeBot } from '../lib/orders'
 import { metaOrderFields, PRODUCT_EVENT, track, trackOnce } from '../lib/pixel'
+import { flush, once, orderTrackingFields, t } from '../lib/track'
 import { WhatsAppGlyph } from './WhatsAppGlyph'
 
 /*
@@ -34,6 +35,7 @@ export function ExpressCheckout() {
   // Free hosts sleep: wake the bot when the visitor starts filling the form, not on every page view.
   const wake = () => {
     trackOnce('InitiateCheckout', { ...PRODUCT_EVENT, value: total, num_items: qty })
+    once('form:express', 'form_start', { form: 'express' })
     if (!woke.current) {
       woke.current = true
       wakeBot()
@@ -41,6 +43,12 @@ export function ExpressCheckout() {
   }
 
   const clean = (s: string) => s.trim().replace(/\s+/g, ' ')
+
+  const changeQty = (step: number) => {
+    const to = Math.min(MAX_QTY, Math.max(1, qty + step))
+    if (to !== qty) t('quantity_change', { form: 'express', from: qty, to })
+    setQty(to)
+  }
 
   const submit = async (e: FormEvent) => {
     e.preventDefault()
@@ -50,6 +58,10 @@ export function ExpressCheckout() {
     if (!isValidPhone(v.phone)) next.phone = 'Numéro marocain valide, ex. 06 12 34 56 78.'
     if (clean(v.address).length < ADDRESS_MIN) next.address = 'Veuillez saisir votre adresse (quartier, rue, ville).'
     setErrors(next)
+    // field + error type only, never what was typed
+    ;(Object.keys(next) as (keyof Errors)[]).forEach((field) =>
+      t('field_error', { form: 'express', field, error: !v[field].trim() ? 'required' : field === 'phone' ? 'format' : 'too_short' }),
+    )
     const first = (Object.keys(next) as (keyof Errors)[])[0]
     if (first) {
       document.getElementById(`x-${first}`)?.focus()
@@ -59,8 +71,10 @@ export function ExpressCheckout() {
     const name = clean(v.name)
     // Waits up to 10 s for the bot's number; otherwise a saved NAYO-W… fallback (retried in the background).
     const clientId = newClientId()
+    t('order_submit', { form: 'express', qty })
     const result = await submitOrder({
       ...metaOrderFields(),
+      ...orderTrackingFields(),
       clientId,
       name,
       phone: normalizePhone(v.phone),
@@ -79,6 +93,8 @@ export function ExpressCheckout() {
     // Cash on delivery: placing the order is a Lead (Purchase comes from the bot once the order is confirmed).
     // Same event_id as the bot's Conversions API Lead (the order number): Meta counts it once.
     track('Lead', { ...PRODUCT_EVENT, value: result.total, num_items: qty, contents: [{ id: 'nayo-deodorant', quantity: qty }] }, result.orderNumber)
+    t('order_success', { form: 'express', order: result.orderNumber, qty, fallback: result.fallback })
+    flush()
     setPlaced({ orderNumber: result.orderNumber, total: result.total, name })
     setStatus('done')
   }
@@ -101,6 +117,7 @@ export function ExpressCheckout() {
                 {WHATSAPP_NUMBER && (
                   <a
                     href={whatsappUrl(placed.orderNumber, placed.total, placed.name)}
+                    data-track="whatsapp-confirm"
                     target="_blank"
                     rel="noopener noreferrer"
                     className="mx-auto mt-18 flex min-h-56 w-full max-w-440 items-center justify-center gap-12 rounded-pill bg-gradient-to-b from-[#650a1a] to-[#55040f] px-20 py-10 fs-17 font-semibold text-white shadow-[0_10px_24px_rgba(92,7,21,0.22)] transition-[scale] duration-300 hover:scale-[1.015]"
@@ -162,8 +179,9 @@ export function ExpressCheckout() {
                       <button
                         type="button"
                         aria-label="Retirer un déodorant"
+                        data-track="qty-minus"
                         disabled={qty <= 1}
-                        onClick={() => setQty((q) => Math.max(1, q - 1))}
+                        onClick={() => changeQty(-1)}
                         className="grid h-full w-40 place-items-center text-[#4a0108] disabled:opacity-30"
                       >
                         <Minus className="size-16" strokeWidth={2} aria-hidden />
@@ -174,8 +192,9 @@ export function ExpressCheckout() {
                       <button
                         type="button"
                         aria-label="Ajouter un déodorant"
+                        data-track="qty-plus"
                         disabled={qty >= MAX_QTY}
-                        onClick={() => setQty((q) => Math.min(MAX_QTY, q + 1))}
+                        onClick={() => changeQty(1)}
                         className="grid h-full w-40 place-items-center text-[#4a0108] disabled:opacity-30"
                       >
                         <Plus className="size-16" strokeWidth={2} aria-hidden />
@@ -194,6 +213,7 @@ export function ExpressCheckout() {
 
                 <button
                   type="submit"
+                  data-track="express-submit"
                   disabled={status === 'sending'}
                   aria-busy={status === 'sending'}
                   className="group mt-16 flex h-56 w-full items-center justify-center gap-12 rounded-pill bg-gradient-to-b from-[#650a1a] to-[#55040f] fs-17.5 font-semibold text-white shadow-[0_10px_24px_rgba(92,7,21,0.22)] transition-[scale] duration-300 hover:scale-[1.015] disabled:cursor-wait disabled:hover:scale-100"

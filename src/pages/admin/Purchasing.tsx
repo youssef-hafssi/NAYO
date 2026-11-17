@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useLayoutEffect, useState, type FormEvent } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import { adminApi, Unauthorized, type PurchaseOrder, type Supplier } from '../../lib/adminApi'
+import { isOwner } from '../../lib/adminApi'
 import { useAuth } from './AdminApp'
 import {
   BusyButton,
@@ -42,7 +43,7 @@ export default function Purchasing() {
     [logout],
   )
 
-  if (me.role !== 'owner') return <div className="p-24 fs-14 text-[#8a8a8a]">Réservé au propriétaire.</div>
+  if (!isOwner(me)) return <div className="p-24 fs-14 text-[#8a8a8a]">Réservé au propriétaire.</div>
 
   return (
     <div className="mx-auto w-full max-w-1100 px-16 py-16 md:px-24 md:py-24">

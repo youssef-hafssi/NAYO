@@ -1,4 +1,5 @@
-"""Admin CRM API: orders list / bulk / CSV, customers, follow-up tasks (agents and owner; exports owner only)."""
+"""Admin CRM API: orders list / bulk, follow-up tasks (agents and owners); Clients (list, customer pages, tags, notes,
+reviews) and the customer & order CSV exports: superadmin only."""
 
 from __future__ import annotations
 
@@ -6,6 +7,8 @@ import re
 from typing import Any, Callable
 
 from fastapi import APIRouter, Depends, HTTPException, Response
+
+from .admin import is_owner
 from pydantic import BaseModel, Field
 
 from .crm import SEGMENTS, Crm, CrmError, csv_rows, fmt, now_dt
@@ -74,6 +77,7 @@ def add_crm_routes(router: APIRouter, svc: Callable[[], Any], current_admin: Any
                    audit: Callable[..., None], delivery: Callable[[], Any], apply_status: Callable[..., Any],
                    update_order: Callable[..., None]) -> None:
     cache: dict[str, Crm] = {}
+    superadmin_only = router.superadmin_only  # type: ignore[attr-defined]
 
     def crm() -> Crm:
         s = svc()
@@ -127,7 +131,7 @@ def add_crm_routes(router: APIRouter, svc: Callable[[], Any], current_admin: Any
         _page(limit, offset)
         page = run(lambda: crm().search_orders(_filters(q, status, frm, to, city, carrier_id, source), sort,
                                                dir != "asc", limit, offset))
-        if admin.get("role") != "owner":
+        if not is_owner(admin):
             for o in page["items"]:
                 for k in MONEY_ONLY_OWNER:
                     o.pop(k, None)
@@ -135,7 +139,7 @@ def add_crm_routes(router: APIRouter, svc: Callable[[], Any], current_admin: Any
 
     @router.get("/orders.csv")
     def export_orders(q: str = "", status: str = "", frm: str = "", to: str = "", city: str = "", carrier_id: str = "",
-                      source: str = "", admin: dict = Depends(owner_only)) -> Response:
+                      source: str = "", admin: dict = Depends(superadmin_only)) -> Response:
         rows = crm().export_orders(_filters(q, status, frm, to, city, carrier_id, source))
         cols = [("order_number", "Commande"), ("created_at", "Créée le"), ("name", "Nom"), ("phone", "Téléphone"),
                 ("city", "Ville"), ("address", "Adresse"), ("quantity", "Quantité"), ("total", "Total (MAD)"),
@@ -189,16 +193,16 @@ def add_crm_routes(router: APIRouter, svc: Callable[[], Any], current_admin: Any
     # ================================================================== customers
     @router.get("/customers")
     def customers(q: str = "", segment: str = "", tag: str = "", sort: str = "last_order", dir: str = "desc",
-                  limit: int = 50, offset: int = 0, admin: dict = Depends(current_admin)) -> dict[str, Any]:
+                  limit: int = 50, offset: int = 0, admin: dict = Depends(superadmin_only)) -> dict[str, Any]:
         _page(limit, offset)
         page = run(lambda: crm().list_customers(q[:80], segment, tag[:30], sort, dir != "asc", limit, offset))
-        if admin.get("role") != "owner":
+        if not is_owner(admin):
             for c in page["items"]:
                 c.pop("delivered_cents", None)
         return page
 
     @router.get("/customers.csv")
-    def export_customers(q: str = "", segment: str = "", tag: str = "", admin: dict = Depends(owner_only)) -> Response:
+    def export_customers(q: str = "", segment: str = "", tag: str = "", admin: dict = Depends(superadmin_only)) -> Response:
         if segment and segment not in SEGMENTS:
             raise HTTPException(400, "segment invalide")
         items = crm().list_customers(q[:80], segment, tag[:30], "last_order", True, 10000, 0)["items"]
@@ -216,12 +220,12 @@ def add_crm_routes(router: APIRouter, svc: Callable[[], Any], current_admin: Any
                         headers={"Content-Disposition": f'attachment; filename="nayo-clients-{fmt(now_dt())[:10]}.csv"'})
 
     @router.get("/customers/{phone}")
-    def customer(phone: str, admin: dict = Depends(current_admin)) -> dict[str, Any]:
+    def customer(phone: str, admin: dict = Depends(superadmin_only)) -> dict[str, Any]:
         p = _phone(phone)
         c = crm().get_customer(p)
         if not c:
             raise HTTPException(404, "client introuvable")
-        if admin.get("role") != "owner":
+        if not is_owner(admin):
             c.pop("delivered_cents", None)
         conv = svc().store.get_conv(p)
         import time as _t
@@ -234,7 +238,7 @@ def add_crm_routes(router: APIRouter, svc: Callable[[], Any], current_admin: Any
                 "window_open": bool(conv.last_client_at and conv.last_client_at + WINDOW_S > _t.time())}
 
     @router.patch("/customers/{phone}")
-    def edit_customer(phone: str, body: CustomerEditIn, admin: dict = Depends(current_admin)) -> dict[str, Any]:
+    def edit_customer(phone: str, body: CustomerEditIn, admin: dict = Depends(superadmin_only)) -> dict[str, Any]:
         p = _phone(phone)
         if not crm().get_customer(p):
             raise HTTPException(404, "client introuvable")
@@ -251,7 +255,7 @@ def add_crm_routes(router: APIRouter, svc: Callable[[], Any], current_admin: Any
         return {"customer": crm().get_customer(p)}
 
     @router.post("/customers/{phone}/orders")
-    def new_order(phone: str, body: NewOrderIn, admin: dict = Depends(current_admin)) -> dict[str, Any]:
+    def new_order(phone: str, body: NewOrderIn, admin: dict = Depends(superadmin_only)) -> dict[str, Any]:
         """"Nouvelle commande" from a customer's page: same numbering / store / Sheet mirror as the bot."""
         from .orders import create_bot_order
 
@@ -277,13 +281,13 @@ def add_crm_routes(router: APIRouter, svc: Callable[[], Any], current_admin: Any
         _page(limit, offset)
         page = run(lambda: crm().list_tasks(view, limit, offset))
         if view == "today" and offset == 0:
-            page["suggestions"] = crm().suggestions(admin.get("role") == "owner")
+            page["suggestions"] = crm().suggestions(is_owner(admin))
         return page
 
     @router.get("/tasks/counts")
     def task_counts(admin: dict = Depends(current_admin)) -> dict[str, Any]:
         c = crm().task_counts()
-        c["suggestions"] = len(crm().suggestions(admin.get("role") == "owner"))
+        c["suggestions"] = len(crm().suggestions(is_owner(admin)))
         c["badge"] = c["late"] + c["today"] + c["suggestions"]
         return c
 
@@ -291,7 +295,7 @@ def add_crm_routes(router: APIRouter, svc: Callable[[], Any], current_admin: Any
     def add_task(body: TaskIn, admin: dict = Depends(current_admin)) -> dict[str, Any]:
         now = fmt(now_dt())
         if body.suggestion_key:
-            s = next((x for x in crm().suggestions(admin.get("role") == "owner", fresh=True)
+            s = next((x for x in crm().suggestions(is_owner(admin), fresh=True)
                       if x["key"] == body.suggestion_key), None)
             if not s:
                 raise HTTPException(409, "Cette suggestion n'est plus d'actualité.")
@@ -312,7 +316,7 @@ def add_crm_routes(router: APIRouter, svc: Callable[[], Any], current_admin: Any
 
     @router.post("/tasks/dismiss")
     def dismiss(body: DismissIn, admin: dict = Depends(current_admin)) -> dict[str, Any]:
-        s = next((x for x in crm().suggestions(admin.get("role") == "owner", fresh=True) if x["key"] == body.key), None)
+        s = next((x for x in crm().suggestions(is_owner(admin), fresh=True) if x["key"] == body.key), None)
         if not s:
             raise HTTPException(409, "Cette suggestion n'est plus d'actualité.")
         run(lambda: crm().add_task(title=s["title"], due_at=fmt(now_dt()), admin=admin["name"],

@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState, type FormEvent } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { Copy, KeyRound } from 'lucide-react'
 import { adminApi, Unauthorized, type AuditRow, type Member, type Role } from '../../lib/adminApi'
+import { isOwner, isSuperadmin } from '../../lib/adminApi'
 import { useAuth } from './AdminApp'
 import { Banner, BusyButton, Chip, FieldLabel, fmtDateTime, inputClass, Pill, Skeleton } from './ui'
 
@@ -13,7 +14,7 @@ import { Banner, BusyButton, Chip, FieldLabel, fmtDateTime, inputClass, Pill, Sk
 type Tab = 'members' | 'audit'
 type Msg = { kind: 'ok' | 'error'; text: string } | null
 
-const ROLE_LABEL: Record<Role, string> = { owner: 'Propriétaire', agent: 'Agent' }
+const ROLE_LABEL: Record<Role, string> = { superadmin: 'Super-administrateur', owner: 'Propriétaire', agent: 'Agent' }
 
 const ACTION_LABEL: Record<string, string> = {
   'order.status': 'Statut de commande',
@@ -61,7 +62,7 @@ export default function Team() {
     [logout],
   )
 
-  if (me.role !== 'owner')
+  if (!isOwner(me))
     return (
       <div className="mx-auto w-full max-w-960 px-16 py-16 md:px-24 md:py-24">
         <h1 className="fs-22 font-bold">Équipe</h1>
@@ -89,6 +90,8 @@ export default function Team() {
 /* ------------------------------------------------------------------ members */
 
 function Members({ fail, setMessage }: { fail: (e: unknown) => void; setMessage: (m: Msg) => void }) {
+  // Only a superadmin can create, promote, demote or manage a superadmin (server-enforced: 403 otherwise).
+  const sup = isSuperadmin(useAuth().me)
   const [data, setData] = useState(() => adminApi.members().peek() ?? null)
   const [secret, setSecret] = useState<{ who: string; password: string } | null>(null)
   const [adding, setAdding] = useState(false)
@@ -191,13 +194,15 @@ function Members({ fail, setMessage }: { fail: (e: unknown) => void; setMessage:
             <select id="m-role" className={inputClass} value={form.role} onChange={(e) => setForm({ ...form, role: e.target.value as Role })}>
               <option value="agent">Agent</option>
               <option value="owner">Propriétaire</option>
+              {sup && <option value="superadmin">Super-administrateur</option>}
             </select>
           </div>
           <BusyButton type="submit" busy={busy === 'add'}>
             Créer
           </BusyButton>
           <p className="fs-12.5 text-[#8a8a8a] md:col-span-4">
-            Agent : inbox, commandes, clients, relances, livraisons, stock (lecture). Propriétaire : tout, y compris l'argent, les achats, les réglages et l'équipe.
+            Agent : inbox, commandes, relances, livraisons, stock (lecture). Propriétaire : tout, y compris l'argent, les achats, les réglages et l'équipe.
+            {sup && ' Super-administrateur : tout, plus les clients, les visiteurs, la publicité et les exports CSV des clients et commandes.'}
           </p>
         </form>
       )}
@@ -208,6 +213,7 @@ function Members({ fail, setMessage }: { fail: (e: unknown) => void; setMessage:
         <ul className="mt-14 divide-y divide-[#f4eeeb] r-14 border border-[#ece2dd] bg-white">
           {data.items.map((m) => {
             const self = m.id === data.me
+            const locked = m.role === 'superadmin' && !sup // shown, read-only for owners
             return (
               <li key={m.id} className={`flex flex-wrap items-center gap-x-12 gap-y-8 px-14 py-12 ${m.active ? '' : 'bg-[#faf8f7]'}`}>
                 <div className="min-w-0 flex-1 basis-220">
@@ -224,7 +230,7 @@ function Members({ fail, setMessage }: { fail: (e: unknown) => void; setMessage:
                 </label>
                 <select
                   id={`role-${m.id}`}
-                  disabled={self || busy !== null}
+                  disabled={self || locked || busy !== null}
                   value={m.role}
                   onChange={(e) =>
                     act(`role:${m.id}`, () => adminApi.editMember(m.id, { role: e.target.value as Role }), `${m.name} est maintenant ${ROLE_LABEL[e.target.value as Role].toLowerCase()}.`)
@@ -233,8 +239,9 @@ function Members({ fail, setMessage }: { fail: (e: unknown) => void; setMessage:
                 >
                   <option value="agent">Agent</option>
                   <option value="owner">Propriétaire</option>
+                  {(sup || m.role === 'superadmin') && <option value="superadmin">Super-administrateur</option>}
                 </select>
-                {!self && (
+                {!self && !locked && (
                   <>
                     <BusyButton type="button" variant="secondary" busy={busy === `r:${m.id}`} disabled={!m.active} onClick={() => reset(m)}>
                       Réinitialiser le mot de passe

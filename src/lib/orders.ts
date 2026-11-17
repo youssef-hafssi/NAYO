@@ -34,6 +34,14 @@ export type OrderPayload = {
   fbp?: string
   fbc?: string
   pageUrl?: string
+  // First-party analytics (src/lib/track.ts): the visit that placed the order — database only
+  visitorId?: string
+  sessionId?: string
+  utmSource?: string
+  utmMedium?: string
+  utmCampaign?: string
+  utmContent?: string
+  utmTerm?: string
 }
 
 export type SubmitResult = { orderNumber: string; total: number; fallback: boolean }
@@ -58,11 +66,14 @@ function fallbackNumber(): string {
 
 type PostResult = { ok: true; orderNumber: string; total: number } | { ok: false; permanent: boolean }
 
-/** A bot that predates the Meta fields rejects unknown fields (422): never lose the order for them — resend without. */
+const TRACKING_KEYS = ['fbp', 'fbc', 'pageUrl', 'visitorId', 'sessionId', 'utmSource', 'utmMedium', 'utmCampaign', 'utmContent', 'utmTerm'] as const
+
+/** A bot that predates the tracking fields rejects unknown fields (422): never lose the order for them — resend without. */
 async function post(order: OrderPayload, timeoutMs: number): Promise<PostResult> {
   const r = await postOnce(order, timeoutMs)
-  if (!r.ok && r.permanent && (order.fbp || order.fbc || order.pageUrl)) {
-    const { fbp: _fbp, fbc: _fbc, pageUrl: _pageUrl, ...plain } = order
+  if (!r.ok && r.permanent && TRACKING_KEYS.some((k) => order[k])) {
+    const plain = { ...order }
+    TRACKING_KEYS.forEach((k) => delete plain[k])
     return postOnce(plain, timeoutMs)
   }
   return r

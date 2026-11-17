@@ -496,9 +496,32 @@ class Store:
             self._exec(f"UPDATE admin_users SET {', '.join(sets)} WHERE id = ?", (*args, admin_id))
 
     def active_owners(self) -> int:
-        row = self._exec("SELECT COUNT(*) FROM admin_users WHERE COALESCE(role, 'owner') = 'owner' AND COALESCE(disabled, 0) = 0",
+        """Active members with owner rights (owners and superadmins)."""
+        row = self._exec("SELECT COUNT(*) FROM admin_users WHERE COALESCE(role, 'owner') IN ('owner', 'superadmin') "
+                         "AND COALESCE(disabled, 0) = 0", fetch="one")
+        return int(row[0])
+
+    def active_superadmins(self) -> int:
+        row = self._exec("SELECT COUNT(*) FROM admin_users WHERE role = 'superadmin' AND COALESCE(disabled, 0) = 0",
                          fetch="one")
         return int(row[0])
+
+    def set_superadmin(self, email: str, name: str, password_hash: str) -> str:
+        """create_superadmin.py: create the account, or make an existing one an active superadmin with this new
+        password (its open sessions end). Returns 'created' or 'updated'."""
+        import uuid
+
+        email = email.strip().lower()
+        row = self._exec(
+            "UPDATE admin_users SET role = 'superadmin', name = ?, password_hash = ?, disabled = 0, "
+            "session_version = COALESCE(session_version, 0) + 1 WHERE LOWER(email) = ? RETURNING id",
+            (name.strip(), password_hash, email), fetch="one")
+        if row:
+            return "updated"
+        self._exec(
+            "INSERT INTO admin_users (id, email, password_hash, name, role, disabled, session_version, created_at) "
+            "VALUES (?, ?, ?, ?, 'superadmin', 0, 0, ?)", (uuid.uuid4().hex, email, password_hash, name.strip(), time.time()))
+        return "created"
 
     def audit_search(self, *, admin_name: str = "", entity: str = "", frm: float | None = None, to: float | None = None,
                      limit: int = 50, offset: int = 0) -> dict[str, Any]:
@@ -581,7 +604,7 @@ class Store:
 
     def upsert_admin(self, admin_id: str, email: str, password_hash: str, name: str, role: str = "owner") -> None:
         if role not in ("owner", "agent"):
-            raise ValueError("role must be owner or agent")
+            raise ValueError("role must be owner or agent (a superadmin is created with create_superadmin.py)")
         self._exec(
             "INSERT INTO admin_users (id, email, password_hash, name, role) VALUES (?, ?, ?, ?, ?) "
             "ON CONFLICT (email) DO UPDATE SET password_hash = excluded.password_hash, name = excluded.name, "

@@ -1,4 +1,7 @@
-"""Team, audit log viewer and settings (owner only).
+"""Team, audit log viewer and settings (owners and superadmins).
+
+Superadmins: only a superadmin can create, promote to, demote, disable or reset the password of a superadmin, and
+there is always at least one active superadmin once one exists.
 
 Members are never deleted: they are disabled (they can't log in, every open session ends at once). A new member
 and a password reset get a temporary password, shown ONCE in the answer (never stored in clear, never logged)."""
@@ -29,13 +32,13 @@ class MemberIn(BaseModel):
     model_config = {"extra": "forbid"}
     email: str = Field(min_length=5, max_length=200)
     name: str = Field(min_length=2, max_length=80)
-    role: Literal["owner", "agent"] = "agent"
+    role: Literal["superadmin", "owner", "agent"] = "agent"
 
 
 class MemberEditIn(BaseModel):
     model_config = {"extra": "forbid"}
     name: str | None = Field(default=None, min_length=2, max_length=80)
-    role: Literal["owner", "agent"] | None = None
+    role: Literal["superadmin", "owner", "agent"] | None = None
     active: bool | None = None
 
 
@@ -57,7 +60,13 @@ def _day_start(d: str) -> float:
     return datetime.strptime(d, "%Y-%m-%d").replace(tzinfo=TZ).timestamp()
 
 
+ROLE_LABEL = {"superadmin": "super-administrateur", "owner": "propriétaire", "agent": "agent"}
+ONLY_SUPER = "Seul un super-administrateur peut gérer un compte super-administrateur."
+
+
 def add_team_routes(router: APIRouter, svc: Callable[[], Any], owner_only: Any, audit: Callable[..., None]) -> None:
+    from .admin import is_superadmin
+
     def store() -> Any:
         return svc().store
 
@@ -74,6 +83,8 @@ def add_team_routes(router: APIRouter, svc: Callable[[], Any], owner_only: Any, 
 
     @router.post("/team/members")
     def add_member(body: MemberIn, admin: dict = Depends(owner_only)) -> dict[str, Any]:
+        if body.role == "superadmin" and not is_superadmin(admin):
+            raise HTTPException(403, ONLY_SUPER)
         email = body.email.strip().lower()
         if not EMAIL_RE.match(email):
             raise HTTPException(422, "adresse email invalide")
@@ -91,9 +102,15 @@ def add_team_routes(router: APIRouter, svc: Callable[[], Any], owner_only: Any, 
     @router.patch("/team/members/{mid}")
     def edit_member(mid: str, body: MemberEditIn, admin: dict = Depends(owner_only)) -> dict[str, Any]:
         m = member(mid)
+        if (m["role"] == "superadmin" or body.role == "superadmin") and not is_superadmin(admin):
+            raise HTTPException(403, ONLY_SUPER)
         if mid == admin["id"] and (body.active is False or body.role == "agent"):
             raise HTTPException(409, "Vous ne pouvez pas vous désactiver ni retirer votre propre rôle de propriétaire.")
-        losing_owner = m["role"] == "owner" and m["active"] and (body.role == "agent" or body.active is False)
+        role_after = body.role or m["role"]
+        losing_super = m["role"] == "superadmin" and m["active"] and (role_after != "superadmin" or body.active is False)
+        if losing_super and store().active_superadmins() <= 1:
+            raise HTTPException(409, "Il faut au moins un super-administrateur actif.")
+        losing_owner = m["role"] in ("owner", "superadmin") and m["active"] and (role_after == "agent" or body.active is False)
         if losing_owner and store().active_owners() <= 1:
             raise HTTPException(409, "Il faut au moins un propriétaire actif.")
         name = " ".join(body.name.split()) if body.name is not None else None
@@ -102,7 +119,7 @@ def add_team_routes(router: APIRouter, svc: Callable[[], Any], owner_only: Any, 
         if name is not None and name != m["name"]:
             words.append(f"nom → {name}")
         if body.role is not None and body.role != m["role"]:
-            words.append("rôle → " + ("propriétaire" if body.role == "owner" else "agent"))
+            words.append("rôle → " + ROLE_LABEL[body.role])
         if body.active is not None and body.active != m["active"]:
             words.append("réactivé" if body.active else "désactivé (sessions fermées)")
         if words:
@@ -113,6 +130,8 @@ def add_team_routes(router: APIRouter, svc: Callable[[], Any], owner_only: Any, 
     @router.post("/team/members/{mid}/reset-password")
     def reset_password(mid: str, admin: dict = Depends(owner_only)) -> dict[str, Any]:
         m = member(mid)
+        if m["role"] == "superadmin" and not is_superadmin(admin):
+            raise HTTPException(403, ONLY_SUPER)
         if mid == admin["id"]:
             raise HTTPException(409, "Pour votre propre compte, utilisez « Changer mon mot de passe ».")
         password = temporary_password()

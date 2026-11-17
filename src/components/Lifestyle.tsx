@@ -29,6 +29,7 @@ export function Lifestyle() {
         <a
           href="#commander"
           onClick={goToOrderForm}
+          data-track="lifestyle-cta"
           className="group mx-auto mt-24 flex h-60 w-full max-w-440 items-center justify-center gap-12 rounded-pill bg-gradient-to-b from-[#6c0a1c] to-[#520110] fs-18 font-semibold text-white shadow-[0_10px_24px_rgba(92,2,17,0.28)] transition-[scale] duration-300 hover:scale-[1.02] md:h-64 md:fs-19"
         >
           <ShoppingCart className="size-22" strokeWidth={1.6} aria-hidden />

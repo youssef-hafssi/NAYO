@@ -91,6 +91,7 @@ export function Hero() {
           <a
             href="#commander"
             onClick={goToOrderForm}
+            data-track="hero-cta"
             data-anim="hero-cta"
             className="group mt-22 flex h-50 w-full max-w-320 items-center justify-center gap-12 rounded-pill bg-ivory-2 fs-16.5 font-semibold text-ink shadow-[0_6px_24px_rgba(0,0,0,0.18)] transition-[scale] duration-300 hover:scale-[1.02] md:w-295 lg:mt-20 lg:ml-3 lg:h-48"
           >

@@ -2,7 +2,8 @@
 bot, replies within WhatsApp's 24h window, changes order statuses and keeps internal notes.
 
 Auth: POST /admin/login sets a signed HttpOnly session cookie (HMAC-SHA256 with ADMIN_SECRET).
-Team members are created with `python create_admin.py` (no public sign-up).
+Team members are created with `python create_admin.py` (no public sign-up); the superadmin with
+`python create_superadmin.py` (password typed in the terminal, never echoed).
 """
 
 from __future__ import annotations
@@ -35,6 +36,20 @@ SETTABLE_STATUSES = {"confirmed", "shipped", "delivered", "returned", "cancelled
 ALL_STATUSES = STATUSES
 EDITABLE_FIELDS = ("name", "phone", "city", "address", "quantity", "carrier", "tracking", "internal_note")
 MIN_PASSWORD = 10
+
+# Roles, highest first. A superadmin can do everything an owner can, plus Clients, visitor tracking / advertising
+# and the customer & order CSV exports (superadmin only, server-enforced).
+ROLES = ("superadmin", "owner", "agent")
+OWNER_ROLES = ("superadmin", "owner")
+
+
+def is_owner(admin: dict[str, Any] | None) -> bool:
+    """Owner rights (stock, money, team, settings…): owners and superadmins."""
+    return bool(admin) and admin.get("role") in OWNER_ROLES  # type: ignore[union-attr]
+
+
+def is_superadmin(admin: dict[str, Any] | None) -> bool:
+    return bool(admin) and admin.get("role") == "superadmin"  # type: ignore[union-attr]
 
 
 # ---------------------------------------------------------------- passwords & sessions
@@ -163,8 +178,14 @@ def build_admin_router(svc: Callable[[], Any], settings: Any) -> APIRouter:
 
     def owner_only(admin: dict = Depends(current_admin)) -> dict[str, Any]:
         """Owner-only actions (stock adjust, revenue, exports, team, settings), enforced server-side."""
-        if admin.get("role") != "owner":
+        if not is_owner(admin):
             raise HTTPException(403, "Réservé au propriétaire.")
+        return admin
+
+    def superadmin_only(admin: dict = Depends(current_admin)) -> dict[str, Any]:
+        """Clients, visitor tracking / advertising, customer & order CSV exports."""
+        if not is_superadmin(admin):
+            raise HTTPException(403, "Réservé au super-administrateur.")
         return admin
 
     def _audit(admin: dict, action: str, entity: str, entity_id: str = "", details: str = "") -> None:
@@ -173,6 +194,7 @@ def build_admin_router(svc: Callable[[], Any], settings: Any) -> APIRouter:
     # shared with the routers of the next phases
     router.current_admin = current_admin  # type: ignore[attr-defined]
     router.owner_only = owner_only  # type: ignore[attr-defined]
+    router.superadmin_only = superadmin_only  # type: ignore[attr-defined]
     router.audit = _audit  # type: ignore[attr-defined]
 
     def _phone(raw: str) -> str:
@@ -410,7 +432,7 @@ def build_admin_router(svc: Callable[[], Any], settings: Any) -> APIRouter:
         view.update({k: o.get(k, "") or "" for k in EXTRA_COLUMNS})
         view.update({"notes": o.get("notes", ""), "updated_at": o.get("updated_at", ""),
                      "whatsapp_from": o.get("whatsapp_from", "")})
-        if not admin or admin.get("role") != "owner":  # COD amounts and carrier fees: owner only
+        if not is_owner(admin):  # COD amounts and carrier fees: owner only
             for k in MONEY_ONLY_OWNER:
                 view.pop(k, None)
         return view
@@ -424,15 +446,17 @@ def build_admin_router(svc: Callable[[], Any], settings: Any) -> APIRouter:
         edits = [h for h in history if h["action"] in ("order.edit", "order.status")]
         stock = getattr(svc().orders, "stock", None)
         moves = stock.order_movements(o["order_number"]) if stock is not None else []
-        if admin.get("role") != "owner":
+        if not is_owner(admin):
             moves = [{k: v for k, v in m.items() if "cost" not in k} for m in moves]
         crm = router.crm()  # type: ignore[attr-defined]
         c = crm.get_customer(o["phone"]) if o.get("phone") else None
         thread = svc().store.thread(o["phone"])[-6:] if o.get("phone") else []
         return {"order": _full_order(o, admin), "history": history, "last_modified": edits[0] if edits else None,
                 "stock_movements": moves, "thread": thread,
+                # Order context for everyone; the customer's tags belong to Clients (superadmin only).
                 "customer": {"orders_count": c["orders_count"], "returned": c["returned"], "cancelled": c["cancelled"],
-                             "segment": c["segment"], "opted_out": c["opted_out"], "tags": c["tags"]} if c else None}
+                             "segment": c["segment"], "opted_out": c["opted_out"],
+                             "tags": c["tags"] if is_superadmin(admin) else []} if c else None}
 
     @router.patch("/orders/{order_number}")
     def edit_order(order_number: str, body: OrderEditIn, admin: dict = Depends(current_admin)) -> dict[str, Any]:
@@ -462,7 +486,7 @@ def build_admin_router(svc: Callable[[], Any], settings: Any) -> APIRouter:
             else:
                 changes["carrier_id"], changes["carrier"] = "", ""
         if body.carrier_fee is not None:
-            if admin.get("role") != "owner":
+            if not is_owner(admin):
                 raise HTTPException(403, "Réservé au propriétaire.")
             fee = str(round(body.carrier_fee * 100))
             if fee != str(o.get("carrier_fee_cents") or ""):
@@ -502,4 +526,7 @@ def build_admin_router(svc: Callable[[], Any], settings: Any) -> APIRouter:
     from .admin_team import add_team_routes
 
     add_team_routes(router, svc, owner_only, _audit)
+    from .admin_analytics import add_analytics_routes
+
+    add_analytics_routes(router, svc, superadmin_only)
     return router

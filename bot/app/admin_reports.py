@@ -7,6 +7,8 @@ from typing import Any, Callable
 
 from fastapi import APIRouter, Depends, HTTPException, Response
 
+from .admin import is_owner
+
 from .crm import csv_rows
 from .finance import Finance, FinanceError, period
 from .reports import Reports, ReportError, csv_for
@@ -56,7 +58,7 @@ def add_reports_routes(router: APIRouter, svc: Callable[[], Any], current_admin:
 
     @router.get("/dashboard")
     def dashboard(admin: dict = Depends(current_admin)) -> dict[str, Any]:
-        return reports().dashboard(admin.get("role") == "owner")
+        return reports().dashboard(is_owner(admin))
 
     # The CSV route is registered first: "/reports/{name}" would otherwise also match "sales.csv".
     @router.get("/reports/{name}.csv")

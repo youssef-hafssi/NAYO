@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState, type FormEvent } from 'react'
 import { Link } from 'react-router-dom'
 import { ChevronRight } from 'lucide-react'
 import { adminApi, Unauthorized, type AppSettings } from '../../lib/adminApi'
+import { isOwner } from '../../lib/adminApi'
 import { useAuth } from './AdminApp'
 import { Banner, BusyButton, FieldLabel, inputClass, PageSkeleton } from './ui'
 
@@ -32,7 +33,7 @@ export default function Settings() {
   )
 
   useEffect(() => {
-    if (me.role !== 'owner') return
+    if (!isOwner(me)) return
     adminApi
       .settings()
       .then((s) => {
@@ -41,9 +42,9 @@ export default function Settings() {
       })
       .catch(fail)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [me.role, fail])
+  }, [me, fail])
 
-  if (me.role !== 'owner')
+  if (!isOwner(me))
     return (
       <div className="mx-auto w-full max-w-760 px-16 py-16 md:px-24 md:py-24">
         <h1 className="fs-22 font-bold">Réglages</h1>

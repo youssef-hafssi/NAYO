@@ -9,6 +9,7 @@ import {
   type FinanceReport,
   type Period,
 } from '../../lib/adminApi'
+import { isOwner } from '../../lib/adminApi'
 import { useAuth } from './AdminApp'
 import { BusyButton, Chip, FieldLabel, fmtDate, fmtMoney, inputClass, parseMad, Skeleton } from './ui'
 
@@ -47,7 +48,7 @@ export default function Finance() {
     [logout],
   )
 
-  if (me.role !== 'owner') {
+  if (!isOwner(me)) {
     return (
       <div className="mx-auto w-full max-w-1100 px-16 py-16 md:px-24 md:py-24">
         <h1 className="fs-22 font-bold">Finance</h1>

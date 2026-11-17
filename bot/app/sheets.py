@@ -38,7 +38,9 @@ CLOSED_LIKE = ("cancelled", "returned")
 EXTRA_COLUMNS = ["carrier", "tracking", "delivered_at", "return_reason", "source", "internal_note", "shipped_at",
                  # delivery & cash on delivery (see delivery.py)
                  "carrier_id", "carrier_fee_cents", "cod_status", "cod_amount_cents", "remittance_id",
-                 "returned_at", "confirmed_at"]
+                 "returned_at", "confirmed_at",
+                 # first-party analytics (see analytics.py): the website visit that placed the order
+                 "visitor_id", "session_id", "utm_source", "utm_medium", "utm_campaign", "utm_content", "utm_term"]
 ALL_COLUMNS = HEADERS + EXTRA_COLUMNS
 
 
@@ -195,7 +197,7 @@ class DbOrders:
     Same columns as the Google Sheet. View/edit them in Supabase → Table Editor → orders.
     """
 
-    SCHEMA_VERSION = 5  # bump when columns / indexes below change
+    SCHEMA_VERSION = 6  # bump when columns / indexes below change
 
     def __init__(self, store: Any):
         self.store = store
@@ -210,6 +212,7 @@ class DbOrders:
         store._exec("CREATE INDEX IF NOT EXISTS orders_created ON orders (created_at)")
         store._exec("CREATE INDEX IF NOT EXISTS orders_cod ON orders (cod_status, carrier_id)")
         store._exec("CREATE INDEX IF NOT EXISTS orders_delivered ON orders (status, delivered_at)")
+        store._exec("CREATE INDEX IF NOT EXISTS orders_session ON orders (session_id)")
         if store.backend == "postgres":
             store._exec("ALTER TABLE orders ENABLE ROW LEVEL SECURITY")
         store.schema_done("orders", self.SCHEMA_VERSION)

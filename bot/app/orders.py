@@ -19,6 +19,9 @@ log = logging.getLogger("nayo.orders")
 _CONTROL = re.compile(r"[\x00-\x1f\x7f]")
 MIN_CITY, MAX_CITY = 2, 60
 MIN_ADDRESS, MAX_ADDRESS = 5, 200
+_ID = re.compile(r"^[A-Za-z0-9-]{8,64}$")
+UTM_FIELDS = (("utmSource", "utm_source"), ("utmMedium", "utm_medium"), ("utmCampaign", "utm_campaign"),
+              ("utmContent", "utm_content"), ("utmTerm", "utm_term"))
 
 
 class OrderIn(BaseModel):
@@ -43,6 +46,31 @@ class OrderIn(BaseModel):
     # Express checkout on the landing page: city + address known -> the bot only sends the recap and asks "oui".
     city: str | None = Field(default=None, max_length=MAX_CITY)
     address: str | None = Field(default=None, max_length=MAX_ADDRESS)
+    # First-party analytics (src/lib/track.ts): the visit that placed the order. Stored in the database only.
+    visitorId: str | None = None
+    sessionId: str | None = None
+    utmSource: str | None = None
+    utmMedium: str | None = None
+    utmCampaign: str | None = None
+    utmContent: str | None = None
+    utmTerm: str | None = None
+    # Meta Pixel cookies + page URL (src/lib/pixel.ts): accepted and ignored here (Conversions API not on this bot).
+    fbp: str | None = None
+    fbc: str | None = None
+    pageUrl: str | None = None
+
+    @field_validator("visitorId", "sessionId", "utmSource", "utmMedium", "utmCampaign", "utmContent", "utmTerm",
+                     "fbp", "fbc", "pageUrl", mode="before")
+    @classmethod
+    def _tracking(cls, v: Any, info: Any) -> str | None:
+        """Never reject an order because of tracking data: a malformed or oversized value is simply dropped."""
+        if not isinstance(v, str):
+            return None
+        v = _CONTROL.sub("", v).strip()
+        if info.field_name in ("visitorId", "sessionId"):
+            return v if _ID.fullmatch(v) else None
+        limit = 1000 if info.field_name in ("fbc", "pageUrl") else 100
+        return v if v and len(v) <= limit and v[0] not in "=+-@" else None
 
     @field_validator("city", "address")
     @classmethod
@@ -80,7 +108,8 @@ class OrderOut(BaseModel):
     total: int
 
 
-def create_order(body: OrderIn, orders: OrdersRepo, store: Store) -> OrderOut:
+def create_order(body: OrderIn, orders: OrdersRepo, store: Store, on_created: Any = None) -> OrderOut:
+    """`on_created(row)` is called once, only when the order row is really written now (not on a retry)."""
     total = order_total(body.quantity)
     if body.total is not None and body.total != total:
         log.warning("client total %s differs from computed %s — using computed", body.total, total)
@@ -105,9 +134,12 @@ def create_order(body: OrderIn, orders: OrdersRepo, store: Store) -> OrderOut:
         # Express checkout sends the address only: the city column is filled from it when it names a known
         # Moroccan city (reports, delivery), otherwise left empty — the client is never asked for it.
         city = body.city or (detect_city(body.address) if body.address else "")
-        row.update(city=city, address=body.address or "")
+        row.update(city=city, address=body.address or "", visitor_id=body.visitorId or "", session_id=body.sessionId or "",
+                   **{col: getattr(body, attr) or "" for attr, col in UTM_FIELDS})
         orders.append(row)
         store.mark_written(body.clientId)
+        if on_created is not None:
+            on_created(row)
         log.info("order %s created (qty %d, %d MAD)", number, body.quantity, total)
     return OrderOut(orderNumber=number, quantity=body.quantity, total=total)
 

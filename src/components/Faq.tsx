@@ -2,6 +2,7 @@ import { useRef, useState } from 'react'
 import { Plus } from 'lucide-react'
 import gsap from 'gsap'
 import { FAQ } from '../content'
+import { t } from '../lib/track'
 
 function Item({ q, a, idx }: { q: string; a: string; idx: number }) {
   const [open, setOpen] = useState(false)
@@ -12,6 +13,7 @@ function Item({ q, a, idx }: { q: string; a: string; idx: number }) {
   const toggle = () => {
     const next = !open
     setOpen(next)
+    if (next) t('faq_open', { q: idx, label: q.slice(0, 80) })
     const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches
     const d = reduce ? 0 : 0.42
     gsap.to(panel.current, { height: next ? 'auto' : 0, opacity: next ? 1 : 0, duration: d, ease: 'power3.out' })
@@ -24,6 +26,7 @@ function Item({ q, a, idx }: { q: string; a: string; idx: number }) {
         <button
           type="button"
           onClick={toggle}
+          data-track={`faq-${idx}`}
           aria-expanded={open}
           aria-controls={id}
           className="flex min-h-46 w-full items-center gap-16 py-10 pr-24 pl-23 text-left fs-16 lh-22 font-[500] text-white/95 lg:fs-15.75 lg:h-44 lg:py-0"

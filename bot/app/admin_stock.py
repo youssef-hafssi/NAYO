@@ -5,6 +5,8 @@ from __future__ import annotations
 from typing import Any, Callable
 
 from fastapi import APIRouter, Depends, HTTPException
+
+from .admin import is_owner
 from pydantic import BaseModel, Field
 
 from .sheets import CONFIRMED_LIKE
@@ -40,7 +42,7 @@ def add_stock_routes(router: APIRouter, svc: Callable[[], Any], current_admin: A
         return s if s is not None else Stock(svc().store)
 
     def _strip_costs(d: dict[str, Any], admin: dict) -> dict[str, Any]:
-        if admin.get("role") == "owner":
+        if is_owner(admin):
             return d
         return {k: v for k, v in d.items() if k not in COST_KEYS and "cost" not in k}
 

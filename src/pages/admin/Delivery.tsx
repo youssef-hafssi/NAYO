@@ -12,6 +12,7 @@ import {
   type Remittance,
   type ReturnRow,
 } from '../../lib/adminApi'
+import { isOwner } from '../../lib/adminApi'
 import { useAuth } from './AdminApp'
 import { BusyButton, Chip, FieldLabel, fmtDate, fmtDateTime, fmtMoney, formatPhone, inputClass, parseMad, Pill, Skeleton } from './ui'
 
@@ -32,7 +33,7 @@ type Msg = { kind: 'ok' | 'error'; text: string } | null
 
 export default function Delivery() {
   const { me, logout } = useAuth()
-  const owner = me.role === 'owner'
+  const owner = isOwner(me)
   const [params, setParams] = useSearchParams()
   const tab = ((owner && (params.get('tab') as Tab)) || 'board') as Tab
   const [message, setMessage] = useState<Msg>(null)

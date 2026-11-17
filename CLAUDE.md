@@ -20,6 +20,11 @@ Pixel-accurate recreation of two approved designs (landing + checkout) for the N
 - Order flow: submit → POST `VITE_ORDER_ENDPOINT` (the bot's `/orders`, waits ≤10 s, button shows "Envoi en cours…") → bot returns `NAYO-1001`-style number. On timeout/error: fallback `NAYO-W123456`, order saved in localStorage and re-sent on the success screen + every page load (`src/lib/orders.ts`). Checkout pings `/health` on load to wake the sleeping free host.
 - Success screen: "Dernière étape : confirmez sur WhatsApp" + burgundy pill linking to `wa.me/VITE_WHATSAPP_NUMBER` with "Bonjour NAYO, je confirme ma commande {n} – {total} MAD – {name}". No automatic WhatsApp opening. Consent line under the checkout button (absolute at lg so the approved layout doesn't move).
 - WhatsApp bot (Python, FastAPI) lives in `bot/` — see `bot/README.md`. Python decides statuses/totals; the AI only classifies + phrases. State in Postgres (Supabase) in production, never local disk.
+- Admin roles: superadmin > owner > agent. Clients, Visiteurs / Publicité and the customer & order CSV exports are
+  superadmin-only (`superadmin_only` on the server, `isSuperadmin(me)` in the UI). `create_superadmin.py` asks the
+  password in a hidden prompt — never put a password in code, tests, .env.example, logs or chat.
+- First-party analytics (`src/lib/track.ts` → POST /t → `bot/app/analytics.py`): keep track.ts < 3 KB minified, no
+  library; clicks are tracked with `data-track` attributes only (no other markup change on the store page).
 - Never put an `opacity` CSS transition on an element GSAP fades in (`data-anim`): it leaves the element stuck invisible.
 
 ## Priority order (do not break)

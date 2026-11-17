@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState, type ReactNode } from 'react'
 import { Link } from 'react-router-dom'
 import { adminApi, Unauthorized, type Dashboard as Data } from '../../lib/adminApi'
+import { isOwner } from '../../lib/adminApi'
 import { useAuth } from './AdminApp'
 import { Banner, fmtDate, fmtMoney, usePolling, WINE, PageSkeleton } from './ui'
 
@@ -14,7 +15,7 @@ const mad = (c: number | null | undefined) => (c == null ? '—' : fmtMoney(c).r
 
 export default function Dashboard() {
   const { me, logout } = useAuth()
-  const owner = me.role === 'owner'
+  const owner = isOwner(me)
   const [d, setD] = useState<Data | null>(() => adminApi.dashboard().peek() ?? null) // last data, shown at once
   const [error, setError] = useState<string | null>(null)
 

@@ -34,6 +34,7 @@ export function Header() {
 
         <Link
           to={ORDER_PATH}
+          data-track="header-cta"
           className="group ml-auto inline-flex h-36 items-center gap-8 rounded-pill bg-ivory-2 pl-16 pr-14 fs-14 font-semibold text-ink shadow-[0_2px_10px_rgba(0,0,0,0.12)] transition-[scale] duration-300 hover:scale-[1.03] md:ml-36 lg:ml-auto lg:mr-37 lg:h-34 lg:pl-18 lg:pr-15 lg:fs-14.5"
         >
           Acheter maintenant

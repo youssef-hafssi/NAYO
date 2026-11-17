@@ -1,4 +1,4 @@
-import { adminApi } from '../../lib/adminApi'
+import { adminApi, type Role } from '../../lib/adminApi'
 
 /*
  * Instant navigation: each admin page's code chunk and first data requests, by route.
@@ -24,6 +24,7 @@ export const PAGES = {
   account: () => import('./Account'),
   team: () => import('./Team'),
   settings: () => import('./Settings'),
+  visitors: () => import('./Visitors'),
 }
 
 type Prefetchable = { prefetch: () => void }
@@ -32,7 +33,8 @@ type Prefetchable = { prefetch: () => void }
 function plan(pathname: string, search = ''): { chunk?: () => Promise<unknown>; queries: Prefetchable[] } {
   const parts = pathname.replace(/^\/admin\/?/, '').split('/').filter(Boolean)
   const q = new URLSearchParams(search)
-  const owner = isOwner
+  const owner = role === 'owner' || role === 'superadmin'
+  const sup = role === 'superadmin'
   switch (parts[0] ?? 'dashboard') {
     case 'dashboard':
       return { chunk: PAGES.dashboard, queries: [adminApi.dashboard()] }
@@ -43,9 +45,12 @@ function plan(pathname: string, search = ''): { chunk?: () => Promise<unknown>; 
         ? { chunk: PAGES.orderDetail, queries: [adminApi.getOrder(decodeURIComponent(parts[1])), adminApi.carriers()] }
         : { chunk: PAGES.orders, queries: [adminApi.orders({ sort: 'created_at', dir: 'desc' }), adminApi.carriers()] }
     case 'customers':
+      if (!sup) return { queries: [] }
       return parts[1]
         ? { chunk: PAGES.customerDetail, queries: [adminApi.customer(parts[1]), adminApi.team()] }
         : { chunk: PAGES.customers, queries: [adminApi.customers({ sort: 'last_order', dir: 'desc' })] }
+    case 'visitors':
+      return sup ? { chunk: PAGES.visitors, queries: [adminApi.analyticsOverview(30), adminApi.analyticsSessions(0, false)] } : { queries: [] }
     case 'follow-ups':
       return { chunk: PAGES.followUps, queries: [adminApi.tasks('today'), adminApi.taskCounts(), adminApi.team()] }
     case 'delivery':
@@ -93,10 +98,10 @@ function plan(pathname: string, search = ''): { chunk?: () => Promise<unknown>; 
   }
 }
 
-let isOwner = false
-/** Owner-only requests are never prefetched for agents (they would only get 403s). */
-export function setPreloadRole(owner: boolean) {
-  isOwner = owner
+let role: Role = 'agent'
+/** Requests a role can't make are never prefetched (they would only get 403s). */
+export function setPreloadRole(r: Role) {
+  role = r
 }
 
 /** Start a route's code and data (hover, touch, focus, navigation). Safe to call often: deduplicated. */

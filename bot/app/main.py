@@ -1,4 +1,4 @@
-"""FastAPI app: /orders (website), /webhook (WhatsApp Cloud API), /health.
+"""FastAPI app: /orders and /t (website), /webhook (WhatsApp Cloud API), /health, /cron/*, /admin/*.
 
 Run locally:  py -3.11 -m uvicorn app.main:app --reload --port 8000   (from the bot/ folder)
 """
@@ -8,13 +8,14 @@ from __future__ import annotations
 import hmac
 import json
 import logging
+import time
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from typing import Any, AsyncIterator
 
 from fastapi import BackgroundTasks, FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse, PlainTextResponse
+from fastapi.responses import JSONResponse, PlainTextResponse, Response
 from starlette.concurrency import run_in_threadpool
 
 from .config import Settings, get_settings
@@ -86,6 +87,20 @@ def create_app(services: Services | None = None, settings: Settings | None = Non
             state["s"] = build_services(settings)
         return state["s"]
 
+    _analytics: dict[str, Any] = {}
+
+    def analytics() -> Any:
+        """First-party visitor analytics (tables created once, on first use), bound to the current store."""
+        from .analytics import Analytics, RateLimiter
+
+        s = svc()
+        if "a" not in _analytics or _analytics["a"].store is not s.store:
+            _analytics["a"] = Analytics(s.store)
+            _analytics.setdefault("limit", RateLimiter())
+        return _analytics["a"]
+
+    app_analytics = analytics
+
     @asynccontextmanager
     async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
         try:
@@ -126,6 +141,45 @@ def create_app(services: Services | None = None, settings: Settings | None = Non
             raise HTTPException(401, "bad cron secret")
         return {"asked": svc().bot.ask_reviews()}
 
+    @app.post("/t", status_code=204)
+    async def track(request: Request) -> Response:
+        """Visitor events from the store page (navigator.sendBeacon, text/plain). Always 204 for bots and visitors
+        over the rate limit (nothing to retry); 400 for a malformed batch."""
+        from .analytics import MAX_BODY, BatchError, geo, is_bot, parse_batch
+
+        raw = await request.body()
+        if len(raw) > MAX_BODY:
+            raise HTTPException(413, "too large")
+        if is_bot(request.headers.get("user-agent", "")):
+            return Response(status_code=204)
+        now = time.time()
+        try:
+            batch = parse_batch(raw, now)
+        except BatchError as e:
+            raise HTTPException(400, str(e))
+        if batch["webdriver"] or not batch["events"]:
+            return Response(status_code=204)
+        a = analytics()
+        if not _analytics["limit"].allow(batch["visitor_id"], now):
+            return Response(status_code=204)
+        country, city = geo(request.headers)
+        try:
+            await run_in_threadpool(a.record, batch, country=country, city=city, now=now)
+        except Exception as e:  # analytics must never surface as an error on the store page
+            log.warning("analytics: batch not stored: %s", type(e).__name__)
+        return Response(status_code=204)
+
+    @app.get("/cron/analytics-retention")
+    def cron_analytics(request: Request) -> dict[str, Any]:
+        """Vercel Cron (daily, see vercel.json): visitor events older than 90 days are deleted (sessions kept)."""
+        secret = settings.cron_secret
+        if not secret:
+            raise HTTPException(503, "cron disabled (CRON_SECRET not set)")
+        if not hmac.compare_digest(request.headers.get("authorization", ""), f"Bearer {secret}"):
+            raise HTTPException(401, "bad cron secret")
+        analytics().purge()
+        return {"ok": True}
+
     @app.post("/orders", response_model=OrderOut)
     async def post_order(request: Request) -> Any:
         s = svc()
@@ -136,7 +190,7 @@ def create_app(services: Services | None = None, settings: Settings | None = Non
             log.warning("order rate limit hit for an IP")
             raise HTTPException(429, "too many orders")
         raw = await request.body()
-        if len(raw) > 4000:
+        if len(raw) > 8000:  # 413 is final for the website: leave room for the optional tracking fields
             raise HTTPException(413, "payload too large")
         try:
             body = OrderIn.model_validate_json(raw)
@@ -145,11 +199,21 @@ def create_app(services: Services | None = None, settings: Settings | None = Non
             fields = sorted({".".join(str(p) for p in err.get("loc", ())) for err in errors})
             return JSONResponse({"detail": "invalid order", "fields": fields}, status_code=422)
         s.store.hit(f"ip:{ip}")
+        created: list[dict] = []
         try:
-            return create_order(body, s.orders, s.store)
+            out = create_order(body, s.orders, s.store, on_created=created.append)
         except Exception:
             log.exception("could not save order")
             raise HTTPException(503, "order storage unavailable")
+        if created and body.sessionId:
+            try:  # the visit that placed the order (Visiteurs funnel); never blocks the order
+                row = created[0]
+                analytics().link_order(body.sessionId, body.visitorId or "", out.orderNumber,
+                                       utm={c: row.get(c, "") for c in ("utm_source", "utm_medium", "utm_campaign",
+                                                                         "utm_content", "utm_term")})
+            except Exception as e:
+                log.warning("analytics: order link failed: %s", type(e).__name__)
+        return out
 
     @app.get("/webhook")
     def verify_webhook(request: Request) -> Any:
@@ -185,7 +249,10 @@ def create_app(services: Services | None = None, settings: Settings | None = Non
 
     from .admin import build_admin_router
 
-    app.include_router(build_admin_router(svc, settings))  # /admin/* (team inbox)
+    router = build_admin_router(svc, settings)
+    router.analytics = analytics  # type: ignore[attr-defined]  # the "Visiteurs" screen reads the same tables
+    app.include_router(router)  # /admin/* (team inbox)
+    app.state.analytics = app_analytics
     return app
 
 
