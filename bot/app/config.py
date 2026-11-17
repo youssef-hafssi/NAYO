@@ -16,6 +16,11 @@ class Settings(BaseSettings):
     whatsapp_app_secret: str = ""
     graph_api_version: str = "v26.0"
 
+    # Meta Pixel + Conversions API (server events, deduplicated with the browser Pixel by event_id)
+    meta_pixel_id: str = ""
+    meta_capi_token: str = ""  # secret: Vercel env only, never logged or returned
+    meta_test_event_code: str = ""  # set temporarily to see events in Events Manager → "Événements de test"
+
     # Gemini
     gemini_api_key: str = ""
     gemini_model: str = "gemini-3.6-flash"

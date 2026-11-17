@@ -56,6 +56,11 @@ def build_services(settings: Settings) -> Services:
     orders = StockOrders(orders, Stock(store))  # every status/quantity change keeps the stock in line
     if settings.sheet_webhook_url:
         orders = MirroredOrders(orders, settings.sheet_webhook_url, settings.sheet_webhook_secret)
+    from .meta import MetaCapi, MetaTracker, TrackedOrders
+
+    # Outermost: confirmed / delivered / returned → Purchase / OrderDelivered / OrderReturned (Meta, once per order).
+    orders = TrackedOrders(orders, MetaTracker(store, MetaCapi(settings.meta_pixel_id, settings.meta_capi_token,
+                                                               settings.graph_api_version, settings.meta_test_event_code)))
     wa = WhatsAppClient(settings.whatsapp_token, settings.whatsapp_phone_number_id, settings.graph_api_version)
     ai = GeminiAI(
         settings.gemini_api_key,
@@ -81,6 +86,29 @@ def create_app(services: Services | None = None, settings: Settings | None = Non
     state: dict[str, Services] = {}
     if services:
         state["s"] = services
+
+    _meta: dict[str, Any] = {}
+
+    def meta() -> Any:
+        if "m" not in _meta:
+            from .meta import MetaCapi
+
+            _meta["m"] = MetaCapi(settings.meta_pixel_id, settings.meta_capi_token, settings.graph_api_version,
+                                  settings.meta_test_event_code)
+        return _meta["m"]
+
+    app_state_meta = meta  # exposed on the app for tests
+
+    def tracker() -> Any:
+        """The orders' tracker in production (TrackedOrders); otherwise one on this app's store + Conversions API."""
+        own = getattr(svc().orders, "meta", None)
+        if own is not None:
+            return own
+        from .meta import MetaTracker
+
+        if _meta.get("t") is None or _meta["t"].store is not svc().store or _meta["t"].capi is not meta():
+            _meta["t"] = MetaTracker(svc().store, meta())
+        return _meta["t"]
 
     def svc() -> Services:
         if "s" not in state:
@@ -190,7 +218,7 @@ def create_app(services: Services | None = None, settings: Settings | None = Non
             log.warning("order rate limit hit for an IP")
             raise HTTPException(429, "too many orders")
         raw = await request.body()
-        if len(raw) > 8000:  # 413 is final for the website: leave room for the optional tracking fields
+        if len(raw) > 8000:  # 413 is final for the website: room for long ad-click URLs, Meta cookies, tracking fields
             raise HTTPException(413, "payload too large")
         try:
             body = OrderIn.model_validate_json(raw)
@@ -213,6 +241,14 @@ def create_app(services: Services | None = None, settings: Settings | None = Non
                                                                          "utm_content", "utm_term")})
             except Exception as e:
                 log.warning("analytics: order link failed: %s", type(e).__name__)
+        if created:
+            # Lead: same event_id as the browser Pixel (the order number) → Meta counts it once.
+            row = created[0]
+            await run_in_threadpool(
+                lambda: tracker().lead(
+                    order_number=out.orderNumber, total=out.total, quantity=out.quantity, phone=body.phone,
+                    name=body.name, city=row.get("city", ""), ip=ip, user_agent=request.headers.get("user-agent", ""),
+                    fbp=body.fbp or "", fbc=body.fbc or "", source_url=body.pageUrl or ""))  # ≤ 3 s, never blocks
         return out
 
     @app.get("/webhook")
@@ -253,6 +289,8 @@ def create_app(services: Services | None = None, settings: Settings | None = Non
     router.analytics = analytics  # type: ignore[attr-defined]  # the "Visiteurs" screen reads the same tables
     app.include_router(router)  # /admin/* (team inbox)
     app.state.analytics = app_analytics
+    app.state.meta = app_state_meta
+    app.state.meta_box = _meta
     return app
 
 

@@ -22,6 +22,11 @@ MIN_ADDRESS, MAX_ADDRESS = 5, 200
 _ID = re.compile(r"^[A-Za-z0-9-]{8,64}$")
 UTM_FIELDS = (("utmSource", "utm_source"), ("utmMedium", "utm_medium"), ("utmCampaign", "utm_campaign"),
               ("utmContent", "utm_content"), ("utmTerm", "utm_term"))
+_TRACKING = {
+    "fbp": re.compile(r"fb\.\d\.\d{10,16}\.\d{1,32}"),
+    "fbc": re.compile(r"fb\.\d\.\d{10,16}\.[A-Za-z0-9_\-.]{1,500}"),
+    "pageUrl": re.compile(r"https?://[^\s]{1,990}"),
+}
 
 
 class OrderIn(BaseModel):
@@ -54,7 +59,7 @@ class OrderIn(BaseModel):
     utmCampaign: str | None = None
     utmContent: str | None = None
     utmTerm: str | None = None
-    # Meta Pixel cookies + page URL (src/lib/pixel.ts): accepted and ignored here (Conversions API not on this bot).
+    # Meta Pixel: browser cookies + page URL, forwarded to the Conversions API (never stored on the order).
     fbp: str | None = None
     fbc: str | None = None
     pageUrl: str | None = None
@@ -63,14 +68,15 @@ class OrderIn(BaseModel):
                      "fbp", "fbc", "pageUrl", mode="before")
     @classmethod
     def _tracking(cls, v: Any, info: Any) -> str | None:
-        """Never reject an order because of tracking data: a malformed or oversized value is simply dropped."""
-        if not isinstance(v, str):
+        """Tracking must never block an order: anything malformed, too long or not text is dropped (None), never a 422."""
+        if not isinstance(v, str) or not v or len(v) > 1000:
             return None
+        if info.field_name in _TRACKING:  # Meta cookies / page URL: Meta's exact formats
+            return v if _TRACKING[info.field_name].fullmatch(v) else None
         v = _CONTROL.sub("", v).strip()
         if info.field_name in ("visitorId", "sessionId"):
             return v if _ID.fullmatch(v) else None
-        limit = 1000 if info.field_name in ("fbc", "pageUrl") else 100
-        return v if v and len(v) <= limit and v[0] not in "=+-@" else None
+        return v if v and len(v) <= 100 and v[0] not in "=+-@" else None  # utm_*: also no spreadsheet formulas
 
     @field_validator("city", "address")
     @classmethod

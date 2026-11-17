@@ -315,3 +315,22 @@ utm values (database only, never in the Google Sheet). Events older than 90 days
 
 Tests against a real Postgres (migrations on a fresh and on an existing database): set
 `NAYO_TEST_PG_URL=postgresql://user@127.0.0.1:5432/postgres` (a local throwaway server, never Supabase).
+
+## Meta Pixel + Conversions API (cash on delivery)
+
+| Moment | Event | Sent by |
+|---|---|---|
+| Order placed (site) | `Lead` (event_id = order number) | browser Pixel **and** bot — Meta counts it once |
+| Order confirmed (WhatsApp "oui", admin, bulk) | `Purchase` (value = total, MAD) | bot |
+| Delivered | `OrderDelivered` | bot |
+| Returned | `OrderReturned` | bot |
+
+Each event is sent at most once per order (`meta_events` table) and never when its moment is more than 7 days old.
+Status events come from `TrackedOrders`, the outermost orders wrapper, so every path (bot, admin, bulk) counts.
+Phone, name, city and country are normalized and SHA-256 hashed; the browser's IP, user agent and `_fbp` / `_fbc`
+are forwarded with the Lead, and `_fbp` / `_fbc` are kept (`meta_orders`) for the later events. A Meta failure is
+logged and never blocks an order or a status change (3 s timeout).
+
+Vercel env on **nayo-bot**: `META_PIXEL_ID`, `META_CAPI_TOKEN` (secret), and temporarily `META_TEST_EVENT_CODE` to see
+events in Events Manager → "Événements de test" (remove it afterwards: test events are not used for ads).
+On **nayo** (site): `VITE_META_PIXEL_ID` (same id; public by nature).
